@@ -8,22 +8,27 @@ bool is_digit(char c) {
 }
 
 char* decode_bencode(const char* bencoded_value) {
-    if (is_digit(bencoded_value[0])) {
-        int length = atoi(bencoded_value);
-        const char* colon_index = strchr(bencoded_value, ':');
-        if (colon_index != NULL) {
+    char first = bencoded_value[0];
+    switch (first) {
+        case '0' ... '9': {
+            int length = atoi(bencoded_value);
+            const char* colon_index = strchr(bencoded_value, ':');
+            if (colon_index == NULL) {
+                fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
+                exit(1);
+            }
             const char* start = colon_index + 1;
-            char* decoded_str = (char*)malloc(length + 1);
-            strncpy(decoded_str, start, length);
-            decoded_str[length] = '\0';
+            char* decoded_str = (char*)malloc(length + 3);
+            strncpy(decoded_str + 1, start, length);
+            decoded_str[0] = '"';
+            decoded_str[length + 1] = '"';
+            decoded_str[length + 2] = '\0';
             return decoded_str;
-        } else {
-            fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
+        }; break;
+
+        default:
+            fprintf(stderr, "Unknown bencode character %c\n", first);
             exit(1);
-        }
-    } else {
-        fprintf(stderr, "Only strings are supported at the moment\n");
-        exit(1);
     }
 }
 
@@ -42,7 +47,7 @@ int main(int argc, char* argv[]) {
     if (strcmp(command, "decode") == 0) {
         const char* encoded_str = argv[2];
         char* decoded_str = decode_bencode(encoded_str);
-        printf("\"%s\"\n", decoded_str);
+        printf("%s\n", decoded_str);
         free(decoded_str);
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
