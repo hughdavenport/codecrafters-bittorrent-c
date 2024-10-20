@@ -8,7 +8,7 @@
 #define UNREACH \
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
 
-int decode_bencode(const char* bencoded_value) {
+const char *decode_bencode(const char* bencoded_value) {
     char first = bencoded_value[0];
     switch (first) {
         case '0' ... '9': {
@@ -19,25 +19,23 @@ int decode_bencode(const char* bencoded_value) {
                 exit(1);
             }
             const char* start = colon_index + 1;
-            printf("%*s\n", length, start);
-            return EX_OK;
+            printf("\"%.*s\"", length, start);
+            return start + length;
         }; break;
 
         case 'i': {
-            for (int idx = 1; bencoded_value[idx] && bencoded_value[idx] != 'e'; idx ++) {
-                printf("%c", bencoded_value[idx]);
-            }
-            printf("\n");
-            return EX_OK;
+            const char *str = bencoded_value + 1;
+            while (str && *str != 'e') printf("%c", *(str++));
+            return str;
         }; break;
 
         default:
             fprintf(stderr, "Unknown bencode character %c\n", first);
-            return EX_DATAERR;
+            return NULL;
     }
 
     UNREACH
-    return EX_SOFTWARE;
+    return NULL;
 }
 
 int main(int argc, char* argv[]) {
@@ -54,7 +52,9 @@ int main(int argc, char* argv[]) {
 
     if (strcmp(command, "decode") == 0) {
         const char* encoded_str = argv[2];
-        return decode_bencode(encoded_str);
+        int ret = decode_bencode(encoded_str) ? EX_OK : EX_DATAERR;
+        if (ret == EX_OK) printf("\n");
+        return ret;
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
         return EX_USAGE;
