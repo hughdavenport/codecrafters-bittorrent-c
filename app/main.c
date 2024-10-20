@@ -29,6 +29,21 @@ const char *decode_bencode(const char* bencoded_value) {
             return str;
         }; break;
 
+        case 'l': {
+            const char *str = bencoded_value + 1;
+            bool comma = false;
+            printf("[");
+            while (str && *str != 'e') {
+                if (comma) {
+                    printf(",");
+                }
+                str = decode_bencode(str);
+                comma = true;
+            }
+            printf("]");
+            return str;
+        }; break;
+
         default:
             fprintf(stderr, "Unknown bencode character %c\n", first);
             return NULL;
