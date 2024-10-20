@@ -26,7 +26,7 @@ const char *decode_bencode(const char* bencoded_value) {
         case 'i': {
             const char *str = bencoded_value + 1;
             while (str && *str != 'e') printf("%c", *(str++));
-            return str;
+            return str + 1;
         }; break;
 
         case 'l': {
@@ -41,7 +41,7 @@ const char *decode_bencode(const char* bencoded_value) {
                 comma = true;
             }
             printf("]");
-            return str;
+            return str + 1;
         }; break;
 
         default:
