@@ -26,6 +26,15 @@ char* decode_bencode(const char* bencoded_value) {
             return decoded_str;
         }; break;
 
+        case 'i': {
+            int idx = 1;
+            while (bencoded_value[idx] && bencoded_value[idx] != 'e') idx ++;
+            char *decoded_str = (char*)malloc(idx);
+            strncpy(decoded_str, &bencoded_value[1], idx - 1);
+            decoded_str[idx - 1] = '\0';
+            return decoded_str;
+        }; break;
+
         default:
             fprintf(stderr, "Unknown bencode character %c\n", first);
             exit(1);
