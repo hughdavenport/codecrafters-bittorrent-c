@@ -4,6 +4,8 @@
 #include <stdbool.h>
 
 #include <sysexits.h>
+#include <stdio.h>
+#include <errno.h>
 #include <ctype.h>
 
 #define UNREACH \
@@ -82,6 +84,38 @@ const char *decode_bencode(const char* bencoded_value) {
     return NULL;
 }
 
+int info_file(const char *fname) {
+    FILE *f = fopen(fname, "rb");
+    if (f == NULL) return EX_NOINPUT;
+
+    if (fseek(f, 0, SEEK_END) != 0) goto end;
+    long length = ftell(f);
+    if (length < 0) goto end;
+    if (fseek(f, 0, SEEK_SET) != 0) goto end;
+
+    char *data = (char *)malloc(length);
+    size_t read_total = 0;
+    while (read_total < length) {
+        size_t read_count = fread(data, 1, length, f);
+        if (read_count == 0) goto end;
+        read_total += read_count;
+    }
+
+    // FIXME don't print everything
+    int ret = decode_bencode(data) ? EX_OK : EX_DATAERR;
+    if (ret == EX_OK) printf("\n");
+    return ret;
+
+end:
+    if (errno) {
+        int ret = errno;
+        if (f) fclose(f);
+        return ret;
+    }
+    if (f) if (!fclose(f)) return errno;
+    return EX_OK;
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -99,6 +133,9 @@ int main(int argc, char* argv[]) {
         int ret = decode_bencode(encoded_str) ? EX_OK : EX_DATAERR;
         if (ret == EX_OK) printf("\n");
         return ret;
+    } else if (strcmp(command, "info") == 0) {
+        const char* fname = argv[2];
+        return info_file(fname);
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
         return EX_USAGE;
