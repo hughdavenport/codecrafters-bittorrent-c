@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <sysexits.h>
+#include <ctype.h>
 
 #define UNREACH \
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
@@ -18,8 +19,16 @@ const char *decode_bencode(const char* bencoded_value) {
                 fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
                 exit(1);
             }
-            const char* start = colon_index + 1;
-            printf("\"%.*s\"", length, start);
+            const unsigned char* start = colon_index + 1;
+            printf("\"");
+            for (int idx = 0; idx < length; idx ++) {
+                if (!isprint(start[idx])) {
+                    printf("\\x%02x", start[idx]);
+                } else {
+                    printf("%c", start[idx]);
+                }
+            }
+            printf("\"");
             return start + length;
         }; break;
 
