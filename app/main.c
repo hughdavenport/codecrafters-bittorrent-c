@@ -3,11 +3,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-bool is_digit(char c) {
-    return c >= '0' && c <= '9';
-}
+#include <sysexits.h>
 
-char* decode_bencode(const char* bencoded_value) {
+#define UNREACH \
+    fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+
+int decode_bencode(const char* bencoded_value) {
     char first = bencoded_value[0];
     switch (first) {
         case '0' ... '9': {
@@ -18,27 +19,25 @@ char* decode_bencode(const char* bencoded_value) {
                 exit(1);
             }
             const char* start = colon_index + 1;
-            char* decoded_str = (char*)malloc(length + 3);
-            strncpy(decoded_str + 1, start, length);
-            decoded_str[0] = '"';
-            decoded_str[length + 1] = '"';
-            decoded_str[length + 2] = '\0';
-            return decoded_str;
+            printf("%*s\n", length, start);
+            return EX_OK;
         }; break;
 
         case 'i': {
-            int idx = 1;
-            while (bencoded_value[idx] && bencoded_value[idx] != 'e') idx ++;
-            char *decoded_str = (char*)malloc(idx);
-            strncpy(decoded_str, &bencoded_value[1], idx - 1);
-            decoded_str[idx - 1] = '\0';
-            return decoded_str;
+            for (int idx = 1; bencoded_value[idx] && bencoded_value[idx] != 'e'; idx ++) {
+                printf("%c", bencoded_value[idx]);
+            }
+            printf("\n");
+            return EX_OK;
         }; break;
 
         default:
             fprintf(stderr, "Unknown bencode character %c\n", first);
-            exit(1);
+            return EX_DATAERR;
     }
+
+    UNREACH
+    return EX_SOFTWARE;
 }
 
 int main(int argc, char* argv[]) {
@@ -48,20 +47,19 @@ int main(int argc, char* argv[]) {
 
     if (argc < 3) {
         fprintf(stderr, "Usage: your_bittorrent.sh <command> <args>\n");
-        return 1;
+        return EX_USAGE;
     }
 
     const char* command = argv[1];
 
     if (strcmp(command, "decode") == 0) {
         const char* encoded_str = argv[2];
-        char* decoded_str = decode_bencode(encoded_str);
-        printf("%s\n", decoded_str);
-        free(decoded_str);
+        return decode_bencode(encoded_str);
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
-        return 1;
+        return EX_USAGE;
     }
 
-    return 0;
+    UNREACH
+    return EX_SOFTWARE;
 }
