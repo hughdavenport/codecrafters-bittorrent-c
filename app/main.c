@@ -26,6 +26,7 @@ const char *decode_bencode(const char* bencoded_value) {
         case 'i': {
             const char *str = bencoded_value + 1;
             while (str && *str != 'e') printf("%c", *(str++));
+            // FIXME assert missing e?
             return str + 1;
         }; break;
 
@@ -41,6 +42,25 @@ const char *decode_bencode(const char* bencoded_value) {
                 comma = true;
             }
             printf("]");
+            // FIXME assert missing e?
+            return str + 1;
+        }; break;
+
+        case 'd': {
+            const char *str = bencoded_value + 1;
+            bool comma = false;
+            printf("{");
+            while (str && *str != 'e') {
+                if (comma) {
+                    printf(",");
+                }
+                str = decode_bencode(str);
+                // FIXME assert that not 'e' here?
+                printf(":");
+                str = decode_bencode(str);
+                comma = true;
+            }
+            printf("}");
             return str + 1;
         }; break;
 
