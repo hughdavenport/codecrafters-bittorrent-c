@@ -234,6 +234,7 @@ int print_value(Value *value, PrintConfig config) {
             bool comma = false;
             Dict *d = (Dict *)value->data;
             while (d) {
+                if (!d->key) break;
                 if (comma) printf(",");
                 else comma = true;
                 int ret = print_value(d->key, config);
@@ -253,10 +254,7 @@ int print_value(Value *value, PrintConfig config) {
         return EX_SOFTWARE;
 }
 
-Value *dict_value(Value *dict, const char* key) {
-    if (!dict || dict->type != DICT) return NULL;
-    Dict *d = (Dict *)dict->data;
-
+Value *dict_value(Dict *d, const char* key) {
     while (d) {
         if (!d->key || d->key->type != BYTES) return NULL;
         int cmp = strncmp(key, d->key->data, d->key->size);
@@ -267,7 +265,6 @@ Value *dict_value(Value *dict, const char* key) {
         }
         d = d->next;
     }
-
     return NULL;
 }
 
@@ -289,9 +286,10 @@ int info_file(const char *fname) {
     }
 
     int ret = EX_DATAERR;
-    Value *dict = decode_bencode(data);
-    if (!dict) goto end;
-    if (dict->type != DICT) goto end;
+    Value *decoded = decode_bencode(data);
+    if (!decoded) goto end;
+    if (decoded->type != DICT) goto end;
+    Dict *dict = (Dict *)decoded->data;
 
     Value *announce = dict_value(dict, "announce");
     if (!announce) goto end;
@@ -301,7 +299,8 @@ int info_file(const char *fname) {
 
     Value *info = dict_value(dict, "info");
     if (!info) goto end;
-    Value *length = dict_value(info, "length");
+    if (info->type != DICT) goto end;
+    Value *length = dict_value((Dict *)info->data, "length");
     if (!length || length->type != INTEGER) goto end;
     printf("Length: ");
     print_value(length, (PrintConfig) {.newline = true});
@@ -309,7 +308,7 @@ int info_file(const char *fname) {
     ret = EX_OK;
 
 end:
-    if (dict) free_value(dict);
+    if (decoded) free_value(decoded);
     if (errno) {
         int ret = errno;
         if (f) fclose(f);
