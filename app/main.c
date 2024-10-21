@@ -218,6 +218,7 @@ int print_value(Value *value, PrintConfig config) {
             bool comma = false;
             List *l = (List *)value->data;
             while (l) {
+                if (!l->value) break;
                 if (comma) printf(",");
                 else comma = true;
                 int ret = print_value(l->value, config);
