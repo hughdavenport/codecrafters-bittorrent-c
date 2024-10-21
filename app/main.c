@@ -197,7 +197,7 @@ int print_value(Value *value, PrintConfig config) {
             if (!config.noquotes) printf("\"");
             for (int idx = 0; idx < value->size; idx ++) {
                 if (!isprint(((char*)value->data)[idx])) {
-                    printf("\\x%02x", ((char*)value->data)[idx]);
+                    printf("\\x%02x", ((unsigned char*)value->data)[idx]);
                 } else {
                     printf("%c", ((char*)value->data)[idx]);
                 }
