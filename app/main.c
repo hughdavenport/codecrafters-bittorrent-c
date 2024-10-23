@@ -8,6 +8,9 @@
 #include <errno.h>
 #include <ctype.h>
 
+#define SHA1_IMPLEMENTATION
+#include "sha1.h"
+
 #define UNREACH \
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
 
@@ -306,6 +309,19 @@ int info_file(const char *fname) {
     printf("Length: ");
     print_value(length, (PrintConfig) {.newline = true});
 
+    uint8_t info_hash[SHA1_BYTE_LENGTH];
+    if (!sha1_digest((const uint8_t*)info->start,
+                    (info->end - info->start),
+                    info_hash)) {;
+        goto end;
+    }
+
+    printf("Info Hash: ");
+    for (int idx = 0; idx < SHA1_BYTE_LENGTH; idx ++) {
+        printf("%02x", info_hash[idx]);
+    }
+    printf("\n");
+    
     ret = EX_OK;
 
 end:
