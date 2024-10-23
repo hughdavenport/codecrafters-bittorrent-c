@@ -32,12 +32,16 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
     uint32_t TEMP;
 
     // Step a.
-    for (int t = 0; t < SHA1_BLOCK_SIZE; t ++) {
-        W[t] = M[t];
+    for (int t = 0; t < 16; t ++) {
+        // FIXME This should be taking 4 bytes per W
+        W[t] = ((M[t*4] << 24) & 0xFF) |
+            ((M[t*4 + 1] << 16) & 0xFF) |
+            ((M[t*4 + 2] << 8) & 0xFF) |
+            (M[t*4 + 3] & 0xFF);
     }
 
     // Step b.
-    for (int t = SHA1_BLOCK_SIZE; t < 80; t ++) {
+    for (int t = 16; t < 80; t ++) {
         W[t] = SHA1_S(1,
                 W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]
         );
@@ -94,20 +98,21 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
 
 void _sha1_pad_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5], uint64_t length) {
     int idx = length % SHA1_BLOCK_SIZE;
+    length *= 8;
     M[idx++] = 0x80;
-    if (idx >= (SHA1_BYTE_LENGTH) - 2) {
+    if (idx >= (SHA1_BLOCK_SIZE) - 2) {
         fprintf(stderr, "%s:%d: pad block over two blocks\n", __FILE__, __LINE__);
-        while (idx < SHA1_BYTE_LENGTH) {
+        while (idx < SHA1_BLOCK_SIZE) {
             M[idx++] = 0;
         }
         _sha1_process_block(M, H);
         idx = 0;
     }
-    while (idx < (SHA1_BYTE_LENGTH - 2)) {
+    while (idx < (SHA1_BLOCK_SIZE - 2)) {
         M[idx++] = 0;
     }
-    M[SHA1_BYTE_LENGTH - 2] = (length >> 32) & 0xFF;
-    M[SHA1_BYTE_LENGTH - 1] = length & 0xFF;
+    M[SHA1_BLOCK_SIZE - 2] = (length >> 32) & 0xFF;
+    M[SHA1_BLOCK_SIZE - 1] = length & 0xFF;
 }
 
 bool sha1_digest(const uint8_t *data,
@@ -127,7 +132,7 @@ bool sha1_digest(const uint8_t *data,
     uint8_t block[SHA1_BLOCK_SIZE];
     for (size_t idx = 0; idx < length; ) {
         block[idx % SHA1_BLOCK_SIZE] = data[idx];
-        if ((idx++) % SHA1_BLOCK_SIZE == 0) {
+        if ((++idx) % SHA1_BLOCK_SIZE == 0) {
             _sha1_process_block(block, H);
         }
     }
