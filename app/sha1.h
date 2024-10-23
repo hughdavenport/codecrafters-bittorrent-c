@@ -34,10 +34,10 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
     // Step a.
     for (int t = 0; t < 16; t ++) {
         // FIXME This should be taking 4 bytes per W
-        W[t] = ((M[t*4] << 24) & 0xFF) |
-            ((M[t*4 + 1] << 16) & 0xFF) |
-            ((M[t*4 + 2] << 8) & 0xFF) |
-            (M[t*4 + 3] & 0xFF);
+        W[t] = (((uint32_t)M[t*4]) << 24) |
+            (((uint32_t)M[t*4 + 1]) << 16) |
+            (((uint32_t)M[t*4 + 2]) << 8) |
+            ((uint32_t)M[t*4 + 3]);
     }
 
     // Step b.
@@ -63,7 +63,7 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
-    for (int t = 0; t < 40; t ++) {
+    for (int t = 20; t < 40; t ++) {
         TEMP = SHA1_S(5, A) +
             (B ^ C ^ D) + // f(t;B,C,D)
             E + W[t] +
@@ -71,7 +71,7 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
-    for (int t = 0; t < 60; t ++) {
+    for (int t = 40; t < 60; t ++) {
         TEMP = SHA1_S(5, A) +
             ((B & C) | (B & D) | (C & D)) + // f(t;B,C,D)
             E + W[t] +
@@ -79,7 +79,7 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
-    for (int t = 0; t < 80; t ++) {
+    for (int t = 60; t < 80; t ++) {
         TEMP = SHA1_S(5, A) +
             (B ^ C ^ D) + // f(t;B,C,D)
             E + W[t] +
