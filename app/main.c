@@ -335,6 +335,43 @@ end:
     return ret;
 }
 
+int hash_file(const char *fname) {
+    FILE *f = fopen(fname, "rb");
+    if (f == NULL) return EX_NOINPUT;
+
+    if (fseek(f, 0, SEEK_END) != 0) goto end;
+    long fsize = ftell(f);
+    if (fsize < 0) goto end;
+    if (fseek(f, 0, SEEK_SET) != 0) goto end;
+
+    char *data = (char *)malloc(fsize);
+    size_t read_total = 0;
+    while (read_total < fsize) {
+        size_t read_count = fread(data, 1, fsize, f);
+        if (read_count == 0) goto end;
+        read_total += read_count;
+    }
+
+    int ret = EX_DATAERR;
+
+    uint8_t info_hash[SHA1_BYTE_LENGTH];
+    sha1_digest(data, fsize, info_hash);
+    for (int idx = 0; idx < SHA1_BYTE_LENGTH; idx ++) {
+        printf("%02x", info_hash[idx]);
+    }
+    printf("\n");
+    ret = EX_SOFTWARE;
+
+end:
+    if (errno) {
+        int ret = errno;
+        if (f) fclose(f);
+        return ret;
+    }
+    if (f) if (!fclose(f)) return errno;
+    return ret;
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -358,6 +395,9 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(command, "info") == 0) {
         const char* fname = argv[2];
         return info_file(fname);
+    } else if (strcmp(command, "hash") == 0) {
+        const char* fname = argv[2];
+        return hash_file(fname);
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
         return EX_USAGE;
