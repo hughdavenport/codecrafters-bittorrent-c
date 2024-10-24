@@ -3,22 +3,22 @@
 
 #include <stdint.h>
 
-#define SHA1_BYTE_LENGTH 20
+#define SHA1_DIGEST_BYTE_LENGTH 20
 
 bool sha1_digest(const uint8_t *data,
                 size_t length,
-                uint8_t result[SHA1_BYTE_LENGTH]);
+                uint8_t result[SHA1_DIGEST_BYTE_LENGTH]);
 
 #endif // SHA1_H
 
 #ifdef SHA1_IMPLEMENTATION
 
-#define SHA1_MAX_LENGTH 18446744073709551614UL // 2^64 - 1
-#define SHA1_BLOCK_SIZE 64
+#define _SHA1_MAX_LENGTH 18446744073709551614UL // 2^64 - 1
+#define _SHA1_BLOCK_SIZE 64
 
 #define SHA1_S(n, X) (((X) << (n)) | ((X) >> (32-(n))))
 
-void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
+void _sha1_process_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5]) {
     // This function is implementing Method 1 of RFC 3174.
 
     // Names from RFC 3174
@@ -96,30 +96,30 @@ void _sha1_process_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5]) {
     H[4] += E;
 }
 
-void _sha1_pad_block(uint8_t M[SHA1_BYTE_LENGTH], uint32_t H[5], uint64_t length) {
-    int idx = length % SHA1_BLOCK_SIZE;
+void _sha1_pad_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5], uint64_t length) {
+    int idx = length % _SHA1_BLOCK_SIZE;
     length *= 8;
     M[idx++] = 0x80;
-    if (idx >= (SHA1_BLOCK_SIZE) - 2) {
+    if (idx >= (_SHA1_BLOCK_SIZE) - 2) {
         fprintf(stderr, "%s:%d: pad block over two blocks\n", __FILE__, __LINE__);
-        while (idx < SHA1_BLOCK_SIZE) {
+        while (idx < _SHA1_BLOCK_SIZE) {
             M[idx++] = 0;
         }
         _sha1_process_block(M, H);
         idx = 0;
     }
-    while (idx < (SHA1_BLOCK_SIZE - 2)) {
+    while (idx < (_SHA1_BLOCK_SIZE - 2)) {
         M[idx++] = 0;
     }
-    M[SHA1_BLOCK_SIZE - 2] = (length >> 32) & 0xFF;
-    M[SHA1_BLOCK_SIZE - 1] = length & 0xFF;
+    M[_SHA1_BLOCK_SIZE - 2] = (length >> 32) & 0xFF;
+    M[_SHA1_BLOCK_SIZE - 1] = length & 0xFF;
 }
 
 bool sha1_digest(const uint8_t *data,
                 uint64_t length,
-                uint8_t result[SHA1_BYTE_LENGTH]) {
+                uint8_t result[SHA1_DIGEST_BYTE_LENGTH]) {
 
-    if (length > SHA1_MAX_LENGTH) return false;
+    if (length > _SHA1_MAX_LENGTH) return false;
 
     // Name and initialisation values from RFC 3174
     uint32_t H[5];
@@ -129,15 +129,15 @@ bool sha1_digest(const uint8_t *data,
     H[3] = 0x10325476;
     H[4] = 0xC3D2E1F0;
 
-    uint8_t block[SHA1_BLOCK_SIZE];
+    uint8_t block[_SHA1_BLOCK_SIZE];
     for (size_t idx = 0; idx < length; ) {
-        block[idx % SHA1_BLOCK_SIZE] = data[idx];
-        if ((++idx) % SHA1_BLOCK_SIZE == 0) {
+        block[idx % _SHA1_BLOCK_SIZE] = data[idx];
+        if ((++idx) % _SHA1_BLOCK_SIZE == 0) {
             _sha1_process_block(block, H);
         }
     }
 
-    if (length % SHA1_BLOCK_SIZE != 0) {
+    if (length % _SHA1_BLOCK_SIZE != 0) {
         _sha1_pad_block(block, H, length);
         _sha1_process_block(block, H);
     }

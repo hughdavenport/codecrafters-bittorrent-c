@@ -309,7 +309,7 @@ int info_file(const char *fname) {
     printf("Length: ");
     print_value(length, (PrintConfig) {.newline = true});
 
-    uint8_t info_hash[SHA1_BYTE_LENGTH];
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
                     info_hash)) {;
@@ -317,7 +317,7 @@ int info_file(const char *fname) {
     }
 
     printf("Info Hash: ");
-    for (int idx = 0; idx < SHA1_BYTE_LENGTH; idx ++) {
+    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         printf("%02x", info_hash[idx]);
     }
     printf("\n");
@@ -354,9 +354,9 @@ int hash_file(const char *fname) {
 
     int ret = EX_DATAERR;
 
-    uint8_t info_hash[SHA1_BYTE_LENGTH];
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     sha1_digest(data, fsize, info_hash);
-    for (int idx = 0; idx < SHA1_BYTE_LENGTH; idx ++) {
+    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         printf("%02x", info_hash[idx]);
     }
     printf("\n");
