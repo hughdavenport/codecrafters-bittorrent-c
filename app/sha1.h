@@ -156,11 +156,12 @@ bool sha1_digest(const uint8_t *data,
 //              H0 H1 H2 H3 H4
 //
 
-    result[0] = H[0];
-    result[1] = H[1];
-    result[2] = H[2];
-    result[3] = H[3];
-    result[4] = H[4];
+    for (size_t idx = 0; idx < 5; idx ++) {
+        result[idx * 4] = (H[idx] >> 24) & _BYTE_MASK;
+        result[(idx * 4) + 1] = (H[idx] >> 16) & _BYTE_MASK;
+        result[(idx * 4) + 2] = (H[idx] >> 8) & _BYTE_MASK;
+        result[(idx * 4) + 3] = H[idx] & _BYTE_MASK;
+    }
 
     return true;
 }
