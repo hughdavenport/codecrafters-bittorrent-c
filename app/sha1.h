@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define SHA1_DIGEST_BYTE_LENGTH 20
+#define SHA1_DIGEST_BYTE_LENGTH (160 / 8)
 
 bool sha1_digest(const uint8_t *data,
                 size_t length,
