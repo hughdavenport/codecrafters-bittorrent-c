@@ -15,6 +15,7 @@ bool sha1_digest(const uint8_t *data,
 
 #define _SHA1_MAX_LENGTH 18446744073709551614UL // 2^64 - 1
 #define _SHA1_BLOCK_SIZE 64
+#define _BYTE_MASK 0xFF
 
 #define SHA1_S(n, X) (((X) << (n)) | ((X) >> (32-(n))))
 
@@ -33,11 +34,10 @@ void _sha1_process_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5]) {
 
     // Step a.
     for (int t = 0; t < 16; t ++) {
-        // FIXME This should be taking 4 bytes per W
-        W[t] = (((uint32_t)M[t*4]) << 24) |
-            (((uint32_t)M[t*4 + 1]) << 16) |
-            (((uint32_t)M[t*4 + 2]) << 8) |
-            ((uint32_t)M[t*4 + 3]);
+        W[t] = ((((uint32_t)M[t*4]) & _BYTE_MASK) << 24) |
+            ((((uint32_t)M[t*4 + 1]) & _BYTE_MASK) << 16) |
+            ((((uint32_t)M[t*4 + 2]) & _BYTE_MASK) << 8) |
+            (((uint32_t)M[t*4 + 3]) & _BYTE_MASK);
     }
 
     // Step b.
