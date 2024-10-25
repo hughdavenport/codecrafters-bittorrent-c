@@ -102,7 +102,7 @@ void _sha1_pad_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5], uint64_t length
     int idx = length % _SHA1_BLOCK_SIZE;
     length *= 8;
     M[idx++] = 0x80;
-    if (idx >= (_SHA1_BLOCK_SIZE) - 2) {
+    if (idx >= (_SHA1_BLOCK_SIZE) - 8) {
         fprintf(stderr, "%s:%d: pad block over two blocks\n", __FILE__, __LINE__);
         while (idx < _SHA1_BLOCK_SIZE) {
             M[idx++] = 0;
@@ -110,11 +110,17 @@ void _sha1_pad_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5], uint64_t length
         _sha1_process_block(M, H);
         idx = 0;
     }
-    while (idx < (_SHA1_BLOCK_SIZE - 2)) {
+    while (idx < (_SHA1_BLOCK_SIZE - 8)) {
         M[idx++] = 0;
     }
-    M[_SHA1_BLOCK_SIZE - 2] = (length >> 32) & 0xFF;
-    M[_SHA1_BLOCK_SIZE - 1] = length & 0xFF;
+    M[_SHA1_BLOCK_SIZE - 8] = (length >> 56) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 7] = (length >> 48) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 6] = (length >> 40) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 5] = (length >> 32) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 4] = (length >> 24) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 3] = (length >> 16) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 2] = (length >> 8) & _BYTE_MASK;
+    M[_SHA1_BLOCK_SIZE - 1] = length & _BYTE_MASK;
 }
 
 bool sha1_digest(const uint8_t *data,
