@@ -130,12 +130,13 @@ bool sha1_digest(const uint8_t *data,
     if (length > _SHA1_MAX_LENGTH) return false;
 
     // Name and initialisation values from RFC 3174
-    uint32_t H[5];
-    H[0] = 0x67452301;
-    H[1] = 0xEFCDAB89;
-    H[2] = 0x98BADCFE;
-    H[3] = 0x10325476;
-    H[4] = 0xC3D2E1F0;
+    uint32_t H[5] = {
+        0x67452301,
+        0xEFCDAB89,
+        0x98BADCFE,
+        0x10325476,
+        0xC3D2E1F0
+    };
 
     uint8_t block[_SHA1_BLOCK_SIZE];
     for (size_t idx = 0; idx < length; ) {
