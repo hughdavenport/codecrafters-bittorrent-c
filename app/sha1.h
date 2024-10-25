@@ -55,35 +55,37 @@ void _sha1_process_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5]) {
     E = H[4];
 
     // Step d.
+    const uint32_t K[5] = {
+        0x5A827999,
+        0x6ED9EBA1,
+        0x8F1BBCDC,
+        0xCA62C1D6
+    };
     for (int t = 0; t < 20; t ++) {
         TEMP = SHA1_S(5, A) +
             ((B & C) | ((~B) & D)) + // f(t;B,C,D)
-            E + W[t] +
-            0x5A827999; // K(t)
+            E + W[t] + K[0];
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
     for (int t = 20; t < 40; t ++) {
         TEMP = SHA1_S(5, A) +
             (B ^ C ^ D) + // f(t;B,C,D)
-            E + W[t] +
-            0x6ED9EBA1; // K(t)
+            E + W[t] + K[1];
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
     for (int t = 40; t < 60; t ++) {
         TEMP = SHA1_S(5, A) +
             ((B & C) | (B & D) | (C & D)) + // f(t;B,C,D)
-            E + W[t] +
-            0x8F1BBCDC; // K(t)
+            E + W[t] + K[2];
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
     for (int t = 60; t < 80; t ++) {
         TEMP = SHA1_S(5, A) +
             (B ^ C ^ D) + // f(t;B,C,D)
-            E + W[t] +
-            0xCA62C1D6; // K(t)
+            E + W[t] + K[3];
         E = D; D = C; C = SHA1_S(30, B);
         B = A; A = TEMP;
     }
