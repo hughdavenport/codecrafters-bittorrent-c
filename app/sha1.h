@@ -146,10 +146,8 @@ bool sha1_digest(const uint8_t *data,
         }
     }
 
-    if (length % _SHA1_BLOCK_SIZE != 0) {
-        _sha1_pad_block(block, H, length);
-        _sha1_process_block(block, H);
-    }
+    _sha1_pad_block(block, H, length);
+    _sha1_process_block(block, H);
 
 //  After processing M(n), the message digest is the 160-bit string
 //     represented by the 5 words
