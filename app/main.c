@@ -321,8 +321,24 @@ int info_file(const char *fname) {
         printf("%02x", info_hash[idx]);
     }
     printf("\n");
-    
+
+    Value *piece_length = dict_value((Dict *)info->data, "piece length");
+    if (!piece_length) goto end;
+    if (piece_length->type != INTEGER) goto end;
     ret = EX_OK;
+    printf("Piece Length: %ld\n", piece_length->size);
+
+    Value *pieces = dict_value((Dict *)info->data, "pieces");
+    if (!pieces) goto end;
+    if (pieces->type != BYTES) goto end;
+    printf("Piece Hashes:\n");
+    for (int piece = 0; piece < pieces->size / SHA1_DIGEST_BYTE_LENGTH; piece ++) {
+        for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+            printf("%02x", ((uint8_t *)pieces->data)[piece * SHA1_DIGEST_BYTE_LENGTH + idx]);
+        }
+        printf("\n");
+    }
+    printf("\n");
 
 end:
     if (decoded) free_value(decoded);
