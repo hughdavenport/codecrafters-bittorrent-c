@@ -668,24 +668,30 @@ int peers_file(const char *fname) {
         goto end;
     }
 
-    printf("info_hash=");
+    dprintf(sock, "GET /");
+    if (url.path) dprintf(sock, "%s", url.path);
+    dprintf(sock, "?");
+    if (url.query) dprintf(sock, "%s&", url.query);
+    dprintf(sock, "info_hash=");
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         if (!is_uri_print(info_hash[idx])) {
-            printf("%%%02x", info_hash[idx]);
+            dprintf(sock, "%%%02x", info_hash[idx]);
         } else {
-            printf("%c", info_hash[idx]);
+            dprintf(sock, "%c", info_hash[idx]);
         }
     }
-    const char *peer_id = "AdtLtU86udGzzN5m9GDsBCaGAAQ";
-    printf("&peer_id=%s", peer_id);
-    printf("&port=%d", 6881);
-    printf("&uploaded=%d", 0);
-    printf("&downloaded=%d", 0);
-    printf("&left=");
-    print_value(length, (PrintConfig) {.newline = false});
-    printf("&compact=1");
-    printf("\n");
-
+    const char *peer_id = "AdtLtU86udGzzN5m9GDs"; // 20 byte identifier. This is random data
+    dprintf(sock, "&peer_id=%s", peer_id);
+    dprintf(sock, "&port=%d", 6881);
+    dprintf(sock, "&uploaded=%d", 0);
+    dprintf(sock, "&downloaded=%d", 0);
+    dprintf(sock, "&left=%lu", length->size);
+    dprintf(sock, "&compact=1");
+    dprintf(sock, " HTTP/1.0\r\n");
+    dprintf(sock, "Host: %s\r\n", url.host);
+    dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
+    dprintf(sock, "Accept: */*\r\n");
+    dprintf(sock, "\r\n");
 
 end:
     if (sock != -1) close(sock);
