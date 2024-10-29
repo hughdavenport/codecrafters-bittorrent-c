@@ -383,7 +383,6 @@ int is_uri_print(char c) {
 }
 
 typedef struct {
-    int valid;
     char *scheme;
     char *authority; // will be "//<NULL>" followed by either user or host (whichever is not null in that order)
     char *user;
@@ -396,9 +395,8 @@ typedef struct {
     char *fragment;
 } URL;
 
-URL parse_url(char *start, char *end) {
-    URL ret = {0};
-    ret.valid = 1;
+bool parse_url(char *start, char *end, URL *ret) {
+    memset(ret, 0, sizeof(URL));
 
     // scheme : // user : pass @ host : port / path ? query # fragment
     //         (         "authority"          )
@@ -411,128 +409,126 @@ URL parse_url(char *start, char *end) {
     //  - fragment (including pre-#)
     //
     // This function operates on the input range, and will insert null bytes. Fix with the below.
-    //  - ':' 3 bytes before ret.host (or 1 byte before ret.authority)
-    //  - ':' before ret.path only if ret.host isn't set
-    //  - ':' before ret.pass
-    //  - '@' before ret.host if ret.user is also set
-    //  - ':' before ret.port
-    //  - '/' before ret.path if ret.host is also set
+    //  - ':' 3 bytes before ret->host (or 1 byte before ret->authority)
+    //  - ':' before ret->path only if ret->host isn't set
+    //  - ':' before ret->pass
+    //  - '@' before ret->host if ret->user is also set
+    //  - ':' before ret->port if ret->host < ret->port < ret->path
+    //  - '/' before ret->path if ret->host is also set
     //  - '?' before query
     //  - '#' before fragment
 
     char *p = start;
     if (end == NULL) end = p + strlen(p);
 
-    ret.scheme = p;
+    ret->scheme = p;
     while (p < end && *p != ':') p ++;
     if (p >= end) {
-        ret.valid = 0;
         fprintf(stderr, "Could not find scheme in URL\n");
-        // Early return here, no other parts to parse
-        return ret;
+        return false;
     }
     *p = 0;
-    if (strcmp(ret.scheme, "http") != 0) {
-        ret.valid = 0;
-        fprintf(stderr, "Unsupported scheme: %s\n", ret.scheme);
+    if (strcmp(ret->scheme, "http") != 0) {
+        fprintf(stderr, "Unsupported scheme: %s\n", ret->scheme);
+        return false;
     }
     if (p + 1 >= end || *(p + 1) != '/' || *(p + 2) != '/') {
         if (p + 1 >= end) {
-            ret.valid = 0;
             fprintf(stderr, "Invalid URL. Expected authority or path after scheme\n");
+            return false;
         }
-        ret.path = p + 1;
+        ret->path = p + 1;
         p = end;
     } else {
-        ret.authority = p + 1;
+        ret->authority = p + 1;
         p += 3;
     }
 
     // At the start, this could be a "userpart", or host.
-    if (p < end) ret.user = ret.host = p;
+    if (p < end) ret->user = ret->host = p;
 loop:
     while (p && p < end) {
         switch (*p) {
             case ':': {
-                if (ret.port || ret.pass || ret.path || ret.query) {
+                if (ret->port || ret->pass || ret->path || ret->query) {
                     p++; break;
                 }
                 for (char *tmp = p + 1; tmp < end; tmp ++) {
                     if (*tmp == '/') {
                         *tmp = 0;
-                        if (tmp + 1 < end) ret.path = tmp + 1;
+                        if (tmp + 1 < end) ret->path = tmp + 1;
                         break;
                     } else if (!isdigit(*tmp)) {
-                        ret.port_num = 0;
+                        ret->port_num = 0;
                         break;
                     } else {
-                        ret.port_num = 10 * ret.port_num + (*tmp - '0');
+                        ret->port_num = 10 * ret->port_num + (*tmp - '0');
                     }
                 }
-                if (ret.port_num > 0) {
+                if (ret->port_num > 0) {
                     *p = 0;
-                    ret.port = p + 1;
-                    p = ret.path; // Either NULL (eof found above, or set to char after /)
-                    if (ret.host == NULL) {
-                        ret.valid = 0;
+                    ret->port = p + 1;
+                    p = ret->path; // Either NULL (eof found above, or set to char after /)
+                    if (ret->host == NULL) {
                         fprintf(stderr, "Invalid URL. Expected host before path\n");
+                        return false;
                     }
                 } else {
                     // The first : in "userpart" separates into pass
-                    if (!ret.pass && p + 1 < end) {
+                    if (!ret->pass && p + 1 < end) {
                         *p = 0;
-                        ret.pass = p + 1;
+                        ret->pass = p + 1;
                     }
-                    ret.host = NULL;
+                    ret->host = NULL;
                     p += 1;
                 }
             }; break;
 
             case '[': { // IPv6 Literal
-                if (ret.host != ret.user || ret.path || ret.query) {
+                if (ret->host != ret->user || ret->path || ret->query) {
                     p++; break;
                 }
-                ret.host = p;
+                ret->host = p;
                 while (p < end && *p != ']') p ++;
             }; break;
 
             case '@': // End "userpart"
-                if ((ret.host && ret.host != ret.user) || ret.path || ret.query) {
+                if ((ret->host && ret->host != ret->user) || ret->path || ret->query) {
                     p++; break;
                 }
                 *p = 0;
-                if (p + 1 < end) ret.host = p + 1;
+                if (p + 1 < end) ret->host = p + 1;
                 p += 1;
                 break;
 
             case '/':
-                if (ret.path || ret.query) { p++; break; }
+                if (ret->path || ret->query) { p++; break; }
                 *p = 0;
-                if (ret.host == NULL) {
-                    ret.valid = 0;
+                if (ret->host == NULL) {
                     fprintf(stderr, "Invalid URL. Expected host before path\n");
+                    return false;
                 }
-                if (p + 1 < end) ret.path = p + 1;
+                if (p + 1 < end) ret->path = p + 1;
                 break;
 
             case '?':
-                if (ret.query) { p++; break; }
+                if (ret->query) { p++; break; }
                 *p = 0;
-                if (ret.path == NULL) {
-                    ret.valid = 0;
+                if (ret->path == NULL) {
                     fprintf(stderr, "Invalid URL. Expected path before query\n");
+                    return false;
                 }
-                if (p + 1 < end) ret.query = p + 1;
+                if (p + 1 < end) ret->query = p + 1;
                 break;
 
             case '#':
-                if (ret.fragment) { p++; break; }
+                if (ret->fragment) { p++; break; }
                 *p = 0;
-                if (ret.path == NULL) {
-                    ret.valid = 0;
+                if (ret->path == NULL) {
                     fprintf(stderr, "Invalid URL. Expected path before fragment\n");
+                    return false;
                 }
-                if (p + 1 < end) ret.fragment = p + 1;
+                if (p + 1 < end) ret->fragment = p + 1;
 
                 // No more processing after finding fragment
                 p = end;
@@ -544,18 +540,27 @@ loop:
     }
 
     // If we didn't find a '@', then there was no "userpart"
-    if (ret.host == ret.user) ret.user = NULL;
+    if (ret->host == ret->user) ret->user = NULL;
 
-    if (ret.authority && (ret.host == NULL || *ret.host == 0)) {
-        ret.valid = 0;
+    if (ret->authority && (ret->host == NULL || *ret->host == 0)) {
         fprintf(stderr, "Invalid URL. Could not find hostname\n");
+        return false;
     }
 
-    if (ret.port_num == 0) ret.port = ret.scheme;
+    if (ret->port_num == 0) {
+        if (strcmp(ret->scheme, "http") == 0) ret->port = "80";
+        else {
+            fprintf(stderr, "Invalid URL. Could not find port\n");
+            return false;
+        }
+    }
 
-    return ret;
+    return true;
 }
 
+int connect_url(URL *url) {
+
+}
 
 int peers_file(const char *fname) {
     FILE *f = fopen(fname, "rb");
@@ -597,9 +602,11 @@ int peers_file(const char *fname) {
     if (announce->type != BYTES) goto end;
 
     print_value(announce, (PrintConfig) {.noquotes = true, .newline=true});
-    URL url = parse_url((char *)announce->data, (char *)announce->data + announce->size);
+    URL url = {0};
+    if (!parse_url((char *)announce->data, (char *)announce->data + announce->size, &url)) {
+        goto end;
+    }
 
-    printf("valid = %d\n", url.valid);
     printf("scheme = %s\n", url.scheme);
     printf("user = %s\n", url.user);
     printf("pass = %s\n", url.pass);
@@ -737,8 +744,9 @@ int main(int argc, char* argv[]) {
         const char* fname = argv[2];
         return peers_file(fname);
     } else if (strcmp(command, "parse") == 0) {
-        URL url = parse_url(argv[2], NULL);
-        printf("valid = %d\n", url.valid);
+        int ret = EX_OK;
+        URL url = {0};
+        if (!parse_url(argv[2], NULL, &url)) ret = EX_DATAERR;
         printf("scheme = %s\n", url.scheme);
         printf("user = %s\n", url.user);
         printf("pass = %s\n", url.pass);
@@ -747,7 +755,7 @@ int main(int argc, char* argv[]) {
         printf("path = %s\n", url.path);
         printf("query = %s\n", url.query);
         printf("fragment = %s\n", url.fragment);
-        return EX_OK;
+        return ret;
     } else if (strcmp(command, "hash") == 0) {
         const char* fname = argv[2];
         return hash_file(fname);
