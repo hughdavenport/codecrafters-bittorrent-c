@@ -596,6 +596,23 @@ int connect_url(URL *url) {
     return ret; // Either -1, or a file descriptor of a connected socket
 }
 
+char *read_line(char *start, char *end, char **ret) {
+    if (start >= end) return NULL;
+    char *p = start;
+    while (p < end && *p != '\r') p++;
+    if (p >= end) {
+        *ret = start;
+        return p;
+    }
+    if (p + 1 >= end || *(p + 1) != '\n') {
+        fprintf(stderr, "Expected \\n after \\r\n");
+        return NULL;
+    }
+    *p = 0;
+    *ret = start;
+    return p + 2;
+}
+
 int peers_file(const char *fname) {
     FILE *f = fopen(fname, "rb");
     if (f == NULL) return EX_NOINPUT;
@@ -670,6 +687,19 @@ int peers_file(const char *fname) {
     dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
     dprintf(sock, "Accept: */*\r\n");
     dprintf(sock, "\r\n");
+
+#define BUF_SIZE 4096
+    char buf[BUF_SIZE];
+    int len = read(sock, buf, BUF_SIZE);
+    printf("Read %d bytes\n", len);
+    char *p = buf;
+    char *line;
+    char *end = buf + len;
+    int lineno = 1;
+    while (p = read_line(p, end, &line)) {
+        printf("%d: %s\n", lineno, line); 
+        lineno ++;
+    }
 
 end:
     if (sock != -1) close(sock);
