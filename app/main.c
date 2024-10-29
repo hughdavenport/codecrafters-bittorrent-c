@@ -383,20 +383,23 @@ int is_uri_print(char c) {
 }
 
 typedef struct {
+    int valid;
     char *schema;
     char *user;
     char *pass;
     char *host;
-    int port;
+    char *port;
+    int port_num;
     char *path;
     char *query;
-    char *anchor;
+    char *fragment;
 } URL;
 
 URL parse_url(char *start, char *end) {
     URL ret = {0};
+    ret.valid = 1;
 
-    // schema :// user : pass @ host : port / path ? query # anchor
+    // schema :// user : pass @ host : port / path ? query # fragment
 
     char *p = start;
     if (end == NULL) end = p + strlen(p);
@@ -405,9 +408,11 @@ URL parse_url(char *start, char *end) {
     while (p && p < end && *p != ':') p ++;
     *p = 0;
     if (strcmp(ret.schema, "http") != 0) {
+        ret.valid = 0;
         fprintf(stderr, "Invalid schema: %s\n", ret.schema);
     }
     if (p + 2 >= end || *(p + 1) != '/' || *(p + 2) != '/') {
+        ret.valid = 0;
         fprintf(stderr, "Invalid URL. Expected ://\n");
     }
     p += 3;
@@ -415,51 +420,73 @@ URL parse_url(char *start, char *end) {
     // FIXME: Support IPV6 literal address
     if (p < end) ret.user = ret.host = p;
 loop:
-    while (p < end) {
+    while (p && p < end) {
         switch (*p) {
             case ':': {
+                *p = 0;
                 for (char *tmp = p + 1; tmp < end; tmp ++) {
                     if (*tmp == '/') {
                         *tmp = 0;
                         if (tmp + 1 < end) ret.path = tmp + 1;
                         break;
                     } else if (!isdigit(*tmp)) {
-                        ret.port = 0;
+                        ret.port_num = 0;
                         break;
                     } else {
-                        ret.port = 10 * ret.port + (*tmp - '0');
+                        ret.port_num = 10 * ret.port_num + (*tmp - '0');
                     }
                 }
-                if (ret.port > 0) {
-                    *p = 0;
+                if (ret.port_num > 0) {
+                    if (p + 1 < end) ret.port = p + 1;
                     p = ret.path; // Either NULL (eof found above, or set to char after /)
+                    if (ret.host == NULL) {
+                        ret.valid = 0;
+                        fprintf(stderr, "Invalid URL. Expected host before path\n");
+                    }
                 } else {
-                    *p = 0;
-                    ret.host = NULL;
                     if (p + 1 < end) ret.pass = p + 1;
-                    p += 2;
+                    ret.host = NULL;
+                    p += 1;
                 }
+            }; break;
+
+            case '[': {
+                ret.host = p;
+                while (p < end && *p != ']') p ++;
             }; break;
 
             case '@':
                 *p = 0;
                 if (p + 1 < end) ret.host = p + 1;
-                p += 2;
+                p += 1;
                 break;
 
             case '/':
                 *p = 0;
+                if (ret.host == NULL) {
+                    ret.valid = 0;
+                    fprintf(stderr, "Invalid URL. Expected host before path\n");
+                }
                 if (p + 1 < end) ret.path = p + 1;
                 break;
 
             case '?':
                 *p = 0;
+                if (ret.path == NULL) {
+                    ret.valid = 0;
+                    fprintf(stderr, "Invalid URL. Expected path before query\n");
+                }
                 if (p + 1 < end) ret.query = p + 1;
                 break;
 
             case '#':
                 *p = 0;
-                if (p + 1 < end) ret.anchor = p + 1;
+                if (ret.path == NULL) {
+                    ret.valid = 0;
+                    fprintf(stderr, "Invalid URL. Expected path before fragment\n");
+                }
+                if (p + 1 < end) ret.fragment = p + 1;
+                p = end;
                 break;
 
             default:
@@ -470,13 +497,11 @@ loop:
     if (ret.host == ret.user) ret.user = NULL;
 
     if (ret.host == NULL) {
+        ret.valid = 0;
         fprintf(stderr, "Invalid URL. Could not find hostname\n");
     }
 
-    if (ret.port == 0) {
-        if (strcmp(ret.schema, "http") == 0) ret.port = 80;
-        else fprintf(stderr, "Invalid URL. Could not find port\n");
-    }
+    if (ret.port_num == 0) ret.port = ret.schema;
 
     return ret;
 }
@@ -522,32 +547,39 @@ int peers_file(const char *fname) {
     if (announce->type != BYTES) goto end;
 
     print_value(announce, (PrintConfig) {.noquotes = true, .newline=true});
-    URL url = parse_url((char *)announce->start, (char *)announce->end);
+    URL url = parse_url((char *)announce->data, (char *)announce->data + announce->size);
 
+    printf("valid = %d\n", url.valid);
     printf("schema = %s\n", url.schema);
+    printf("user = %s\n", url.user);
+    printf("pass = %s\n", url.pass);
     printf("host = %s\n", url.host);
-    printf("port = %d\n", url.port);
+    printf("port = %s\n", url.port);
     printf("path = %s\n", url.path);
     printf("query = %s\n", url.query);
-    printf("anchor = %s\n", url.anchor);
+    printf("fragment = %s\n", url.fragment);
 
-    /* struct addrinfo hints; */
-    /* struct addrinfo *result, *rp; */
-    /* int sfd, s; */
-    /* size_t len; */
-    /* ssize_t nread; */
+    struct addrinfo hints = {0};
+    struct addrinfo *result, *rp = NULL;
+    int sfd, s;
+    size_t len;
+    ssize_t nread;
+
     /* char buf[BUF_SIZE]; */
 
-    /* memset(&hints, 0, sizeof(hints)); */
-    /* hints.ai_family = AF_UNSPEC;    /1* Allow IPv4 or IPv6 *1/ */
-    /* hints.ai_socktype = SOCK_DGRAM; /1* Datagram socket *1/ */
-    /* hints.ai_flags = 0; */
-    /* hints.ai_protocol = 0;          /1* Any protocol *1/ */
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;          /* Any protocol */
 
-    /* ret = getaddrinfo(host, port, &hints, &result); */
-    /* if (ret != 0) { */
-    /*     goto end; */
-    /* } */
+    printf("%p\n", result);
+    ret = getaddrinfo(url.host, url.port, &hints, &result);
+    if (ret != 0) {
+        goto end;
+    }
+    printf("%p\n", result);
+
+
 
     /* int sockfd; */
     /* sockfd = socket(AF_INET, SOCK_STREAM, 0); */
@@ -656,12 +688,15 @@ int main(int argc, char* argv[]) {
         return peers_file(fname);
     } else if (strcmp(command, "parse") == 0) {
         URL url = parse_url(argv[2], NULL);
+        printf("valid = %d\n", url.valid);
         printf("schema = %s\n", url.schema);
+        printf("user = %s\n", url.user);
+        printf("pass = %s\n", url.pass);
         printf("host = %s\n", url.host);
-        printf("port = %d\n", url.port);
+        printf("port = %s (%d)\n", url.port, url.port_num);
         printf("path = %s\n", url.path);
         printf("query = %s\n", url.query);
-        printf("anchor = %s\n", url.anchor);
+        printf("fragment = %s\n", url.fragment);
         return EX_OK;
     } else if (strcmp(command, "hash") == 0) {
         const char* fname = argv[2];
