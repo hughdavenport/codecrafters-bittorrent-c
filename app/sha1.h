@@ -1,7 +1,33 @@
+/*
+MIT License
+
+Copyright (c) 2024 Hugh Davenport
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #ifndef SHA1_H
 #define SHA1_H
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #define SHA1_DIGEST_BYTE_LENGTH (160 / 8)
 
@@ -103,7 +129,6 @@ void _sha1_pad_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5], uint64_t length
     length *= 8;
     M[idx++] = 0x80;
     if (idx >= (_SHA1_BLOCK_SIZE) - 8) {
-        fprintf(stderr, "%s:%d: pad block over two blocks\n", __FILE__, __LINE__);
         while (idx < _SHA1_BLOCK_SIZE) {
             M[idx++] = 0;
         }
