@@ -585,18 +585,6 @@ int connect_url(URL *url) {
         if (ret == -1)
             continue;
 
-        void *addr;
-        if (rp->ai_family == AF_INET) {
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
-            addr = &(ipv4->sin_addr);
-        } else {
-            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
-            addr = &(ipv6->sin6_addr);
-        }
-        char ipstr[INET6_ADDRSTRLEN];
-        inet_ntop(rp->ai_family, addr, ipstr, INET6_ADDRSTRLEN);
-        printf("connecting to %s\n", ipstr);
-
         if (connect(ret, rp->ai_addr, rp->ai_addrlen) == 0)
             break; // Success
 
@@ -647,20 +635,10 @@ int peers_file(const char *fname) {
     if (!announce) goto end;
     if (announce->type != BYTES) goto end;
 
-    print_value(announce, (PrintConfig) {.noquotes = true, .newline=true});
     URL url = {0};
     if (!parse_url((char *)announce->data, (char *)announce->data + announce->size, &url)) {
         goto end;
     }
-
-    printf("scheme = %s\n", url.scheme);
-    printf("user = %s\n", url.user);
-    printf("pass = %s\n", url.pass);
-    printf("host = %s\n", url.host);
-    printf("port = %s\n", url.port);
-    printf("path = %s\n", url.path);
-    printf("query = %s\n", url.query);
-    printf("fragment = %s\n", url.fragment);
 
     int sock = connect_url(&url);
 
