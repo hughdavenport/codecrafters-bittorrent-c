@@ -12,6 +12,10 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#include <arpa/inet.h>
+
+#include <unistd.h>
+
 #define SHA1_IMPLEMENTATION
 #include "sha1.h"
 
@@ -559,7 +563,49 @@ loop:
 }
 
 int connect_url(URL *url) {
+    struct addrinfo hints = {0};
+    struct addrinfo *result, *rp = NULL;
+    int ret = -1;
+    size_t len;
+    ssize_t nread;
 
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+
+    ret = getaddrinfo(url->host, url->port, &hints, &result);
+    if (ret != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
+        return ret;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        ret = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (ret == -1)
+            continue;
+
+        void *addr;
+        if (rp->ai_family == AF_INET) {
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
+            addr = &(ipv4->sin_addr);
+        } else {
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
+            addr = &(ipv6->sin6_addr);
+        }
+        char ipstr[INET6_ADDRSTRLEN];
+        inet_ntop(rp->ai_family, addr, ipstr, INET6_ADDRSTRLEN);
+        printf("connecting to %s\n", ipstr);
+
+        if (connect(ret, rp->ai_addr, rp->ai_addrlen) == 0)
+            break; // Success
+
+        close(ret);
+    }
+
+    freeaddrinfo(result);
+
+    return ret; // Either -1, or a file descriptor of a connected socket
 }
 
 int peers_file(const char *fname) {
@@ -616,39 +662,11 @@ int peers_file(const char *fname) {
     printf("query = %s\n", url.query);
     printf("fragment = %s\n", url.fragment);
 
-    struct addrinfo hints = {0};
-    struct addrinfo *result, *rp = NULL;
-    int sfd, s;
-    size_t len;
-    ssize_t nread;
+    int sock = connect_url(&url);
 
-    /* char buf[BUF_SIZE]; */
-
-    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;          /* Any protocol */
-
-    printf("%p\n", result);
-    ret = getaddrinfo(url.host, url.port, &hints, &result);
-    if (ret != 0) {
+    if (sock == -1) {
         goto end;
     }
-    printf("%p\n", result);
-
-
-
-    /* int sockfd; */
-    /* sockfd = socket(AF_INET, SOCK_STREAM, 0); */
-    /* if (sockfd == -1) { */
-    /*     goto end; */
-    /* } */
-    /* struct sockaddr_in servaddr; */
-    /* bzero(&servaddr, sizeof(servaddr)); */
-    /* servaddr.sin_family = AF_INET; */
-    /* servaddr.sin_addr.s_addr = AF_INET; */
-    /* servaddr.sin_port = 80; */
-    /* connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) */
 
     printf("info_hash=");
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
@@ -670,6 +688,7 @@ int peers_file(const char *fname) {
 
 
 end:
+    if (sock != -1) close(sock);
     if (decoded) free_value(decoded);
     if (errno) {
         int ret = errno;
