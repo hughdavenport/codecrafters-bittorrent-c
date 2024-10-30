@@ -74,7 +74,7 @@ void free_value(Value *value) {
     free(value);
 }
 
-Value *decode_bencode(const char* bencoded_value) {
+Value *decode_bencode(const char* bencoded_value, const char *end) {
     char first = bencoded_value[0];
     switch (first) {
         case '0' ... '9': {
@@ -102,7 +102,7 @@ Value *decode_bencode(const char* bencoded_value) {
                       const char *str = bencoded_value + 1;
                       size_t num = 0;
                       if (*str == '-') str++;
-                      while (str && *str != 'e') {
+                      while (str < end && *str != 'e') {
                           num = 10 * num + (*(str++) - '0');
                       }
                       if (bencoded_value[1] == '-') num = -num;
@@ -126,9 +126,9 @@ Value *decode_bencode(const char* bencoded_value) {
                       }
                       List *data = l;
                       size_t size = 0;
-                      while (str && *str != 'e') {
+                      while (str < end && *str != 'e') {
                           size ++;
-                          l->value = decode_bencode(str);
+                          l->value = decode_bencode(str, end);
                           if (!l->value || l->value->type == UNKNOWN) return NULL;
                           str = l->value->end;
                           if (str && *str != 'e') {
@@ -160,18 +160,18 @@ Value *decode_bencode(const char* bencoded_value) {
                       }
                       Dict *data = d;
                       size_t size = 0;
-                      while (str && *str != 'e') {
+                      while (str < end && *str != 'e') {
                           size ++;
 
-                          d->key = decode_bencode(str);
+                          d->key = decode_bencode(str, end);
                           if (!d->key || d->key->type != BYTES) return NULL;
                           str = d->key->end;
 
-                          d->value = decode_bencode(str);
+                          d->value = decode_bencode(str, end);
                           if (!d->value || d->value->type == UNKNOWN) return NULL;
                           str = d->value->end;
 
-                          if (str && *str != 'e') {
+                          if (str < end && *str != 'e') {
                               d->next = calloc(1, sizeof(Dict));
                               if (!d->next) {
                                   fprintf(stderr, "Out of memory\n");
@@ -298,7 +298,7 @@ int info_file(const char *fname) {
     }
 
     int ret = EX_DATAERR;
-    Value *decoded = decode_bencode(data);
+    Value *decoded = decode_bencode(data, data + fsize);
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
     Dict *dict = (Dict *)decoded->data;
@@ -552,8 +552,10 @@ loop:
     }
 
     if (ret->port_num == 0) {
-        if (strcmp(ret->scheme, "http") == 0) ret->port = "80";
-        else {
+        if (strcmp(ret->scheme, "http") == 0) {
+            ret->port = "80";
+            ret->port_num = 80;
+        } else {
             fprintf(stderr, "Invalid URL. Could not find port\n");
             return false;
         }
@@ -589,6 +591,7 @@ int connect_url(URL *url) {
             break; // Success
 
         close(ret);
+        ret = -1;
     }
 
     freeaddrinfo(result);
@@ -610,63 +613,65 @@ char *read_line(char *start, char *end, char **ret) {
     }
     *p = 0;
     *ret = start;
-    return p + 2;
+    return p + 2 >= end ? p + 1 : p + 2;
 }
 
 int peers_file(const char *fname) {
     FILE *f = fopen(fname, "rb");
     if (f == NULL) return EX_NOINPUT;
 
-    if (fseek(f, 0, SEEK_END) != 0) goto end;
+    if (fseek(f, 0, SEEK_END) != 0) goto cleanup;
     long fsize = ftell(f);
-    if (fsize < 0) goto end;
-    if (fseek(f, 0, SEEK_SET) != 0) goto end;
+    if (fsize < 0) goto cleanup;
+    if (fseek(f, 0, SEEK_SET) != 0) goto cleanup;
 
     char *data = (char *)malloc(fsize);
     size_t read_total = 0;
     while (read_total < fsize) {
         size_t read_count = fread(data, 1, fsize, f);
-        if (read_count == 0) goto end;
+        if (read_count == 0) goto cleanup;
         read_total += read_count;
     }
 
     int ret = EX_DATAERR;
-    Value *decoded = decode_bencode(data);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
+    Value *decoded = decode_bencode(data, data + fsize);
+    if (!decoded) goto cleanup;
+    if (decoded->type != DICT) goto cleanup;
     Dict *dict = (Dict *)decoded->data;
     Value *info = dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
+    if (!info) goto cleanup;
+    if (info->type != DICT) goto cleanup;
     Value *length = dict_value((Dict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
+    if (!length || length->type != INTEGER) goto cleanup;
 
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
                     info_hash)) {;
-        goto end;
+        goto cleanup;
     }
 
     Value *announce = dict_value(dict, "announce");
-    if (!announce) goto end;
-    if (announce->type != BYTES) goto end;
+    if (!announce) goto cleanup;
+    if (announce->type != BYTES) goto cleanup;
 
     URL url = {0};
-    if (!parse_url((char *)announce->data, (char *)announce->data + announce->size, &url)) {
-        goto end;
+    if (!parse_url((char *)announce->data,
+                (char *)announce->data + announce->size,
+                &url)) {
+        goto cleanup;
     }
 
     int sock = connect_url(&url);
-
     if (sock == -1) {
-        goto end;
+        goto cleanup;
     }
 
     dprintf(sock, "GET /");
     if (url.path) dprintf(sock, "%s", url.path);
     dprintf(sock, "?");
     if (url.query) dprintf(sock, "%s&", url.query);
+
     dprintf(sock, "info_hash=");
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         if (!is_uri_print(info_hash[idx])) {
@@ -675,6 +680,7 @@ int peers_file(const char *fname) {
             dprintf(sock, "%c", info_hash[idx]);
         }
     }
+
     const char *peer_id = "AdtLtU86udGzzN5m9GDs"; // 20 byte identifier. This is random data
     dprintf(sock, "&peer_id=%s", peer_id);
     dprintf(sock, "&port=%d", 6881);
@@ -683,6 +689,8 @@ int peers_file(const char *fname) {
     dprintf(sock, "&left=%lu", length->size);
     dprintf(sock, "&compact=1");
     dprintf(sock, " HTTP/1.0\r\n");
+
+    // FIXME: This should have port, but only if present
     dprintf(sock, "Host: %s\r\n", url.host);
     dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
     dprintf(sock, "Accept: */*\r\n");
@@ -691,17 +699,87 @@ int peers_file(const char *fname) {
 #define BUF_SIZE 4096
     char buf[BUF_SIZE];
     int len = read(sock, buf, BUF_SIZE);
-    printf("Read %d bytes\n", len);
     char *p = buf;
     char *line;
     char *end = buf + len;
-    int lineno = 1;
+
+    p = read_line(p, end, &line);
+    char *space = index(line, ' ');
+#define s(str) str, strlen(str)
+    if (space == NULL || strncmp(line, s("HTTP/")) != 0) {
+        fprintf(stderr, "Wrong protocol recieved: %s\n", line);
+        goto cleanup;
+    }
+    if (strncmp(line + strlen("HTTP/"), s("1.")) != 0) {
+        *space = 0;
+        fprintf(stderr, "Wrong HTTP version %s\n", (line + strlen("HTTP/")));
+        *space = ' ';
+        goto cleanup;
+    }
+    *space = 0;
+    if (strcmp(line + strlen("HTTP/1."), "0") != 0) {
+        fprintf(stderr, "Different HTTP minor version %s\n", (line + strlen("HTTP/")));
+    }
+    *space = ' ';
+
+    char *status = space + 1;
+    while (*status == ' ') status ++;
+    space = index(status, ' ');
+    if (space == NULL) {
+        fprintf(stderr, "Could not find status code: %s\n", line);
+        goto cleanup;
+    }
+    *space = 0;
+    if (strcmp(status, "200") != 0) {
+        fprintf(stderr, "Non-OK status %s\n", status);
+        *space = ' ';
+        goto cleanup;
+    }
+    *space = ' ';
+
+    long content_length = 0;
+    // FIXME: read more?
     while (p = read_line(p, end, &line)) {
-        printf("%d: %s\n", lineno, line); 
-        lineno ++;
+        if (*line == 0) {
+            break;
+        }
+        char *colon = index(line, ':');
+        *colon = 0;
+        if (strncasecmp(line, s("Content-Length")) == 0) {
+            content_length = atol(colon + 1);
+            fprintf(stderr, "Content-Length: %ld\n", content_length);
+        }
+        *colon = ':';
     }
 
-end:
+    if (content_length > 0 && content_length + (p - buf) > len) {
+        fprintf(stderr, "Need to read %ld more bytes\n", content_length + (p - buf) - len);
+        goto cleanup;
+    }
+
+    decoded = decode_bencode(p, end);
+    if (!decoded) goto cleanup;
+    if (decoded->type != DICT) goto cleanup;
+    dict = (Dict *)decoded->data;
+    Value *peers = dict_value(dict, "peers");
+    if (peers->type != BYTES) goto cleanup;
+
+    for (int idx; (idx + 1) * 6 <= peers->size; idx ++) {
+        printf("%d.%d.%d.%d",
+                ((uint8_t *)peers->data)[6 * idx + 0],
+                ((uint8_t *)peers->data)[6 * idx + 1],
+                ((uint8_t *)peers->data)[6 * idx + 2],
+                ((uint8_t *)peers->data)[6 * idx + 3]);
+        printf(":%d\n",
+                256 * ((uint8_t *)peers->data)[6 * idx + 4] +
+                ((uint8_t *)peers->data)[6 * idx + 5]);
+    }
+
+
+
+
+
+cleanup:
     if (sock != -1) close(sock);
     if (decoded) free_value(decoded);
     if (errno) {
@@ -764,7 +842,7 @@ int main(int argc, char* argv[]) {
 
     if (strcmp(command, "decode") == 0) {
         const char* encoded_str = argv[2];
-        Value *value = decode_bencode(encoded_str);
+        Value *value = decode_bencode(encoded_str, encoded_str + strlen(encoded_str));
         if (!value) return EX_DATAERR;
         print_value(value, (PrintConfig) {0});
         printf("\n");
