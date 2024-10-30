@@ -1,14 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
+#include <stdint.h>
 
 #include <sysexits.h>
-#include <stdio.h>
 #include <errno.h>
-#include <ctype.h>
-
-#include <unistd.h>
 
 #define SHA1_IMPLEMENTATION
 #include "sha1.h"
