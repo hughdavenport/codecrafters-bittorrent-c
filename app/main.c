@@ -597,6 +597,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "    decode\n");
         fprintf(stderr, "    info\n");
         fprintf(stderr, "    peers\n");
+        fprintf(stderr, "Available debug commands:\n");
         fprintf(stderr, "    parse\n");
         fprintf(stderr, "    hash\n");
         return EX_USAGE;

@@ -15,10 +15,12 @@ The entry point for your BitTorrent implementation is in `app/main.c`, but you c
 
 ```sh
 $ ./your_bittorrent.sh
+Usage: your_bittorrent.sh <command> <args>
 Available subcommands:
     decode
     info
     peers
+Available debug subcommands:
     parse
     hash
 
@@ -53,3 +55,9 @@ fragment = (null)
 $ ./your_bittorrent.sh hash sample.torrent
 32682077130437f19fb388813bca3355378b7621
 ```
+
+# Dependencies
+
+This repo uses a few stb-style header only libraries I wrote:
+ - [sha1.h](https://github.com/hughdavenport/sha1.h)
+ - [url.h](https://github.com/hughdavenport/url.h)
