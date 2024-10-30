@@ -592,6 +592,13 @@ int main(int argc, char* argv[]) {
 
     if (argc < 3) {
         fprintf(stderr, "Usage: your_bittorrent.sh <command> <args>\n");
+        fprintf(stderr, "Available subcommands:\n");
+        // FIXME do this better
+        fprintf(stderr, "    decode\n");
+        fprintf(stderr, "    info\n");
+        fprintf(stderr, "    peers\n");
+        fprintf(stderr, "    parse\n");
+        fprintf(stderr, "    hash\n");
         return EX_USAGE;
     }
 
