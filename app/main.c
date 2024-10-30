@@ -79,6 +79,46 @@ end:
     return ret;
 }
 
+int send_tracker_request(URL *url,
+        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+        const char *peer_id,
+        size_t uploaded, size_t downloaded, size_t length) {
+    int sock = -1;
+
+    sock = connect_url(url);
+    if (sock == -1) return sock;
+
+    dprintf(sock, "GET /");
+    if (url->path) dprintf(sock, "%s", url->path);
+    dprintf(sock, "?");
+    if (url->query) dprintf(sock, "%s&", url->query);
+
+    dprintf(sock, "info_hash=");
+    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+        if (!is_url_print(info_hash[idx])) {
+            dprintf(sock, "%%%02x", info_hash[idx]);
+        } else {
+            dprintf(sock, "%c", info_hash[idx]);
+        }
+    }
+
+    dprintf(sock, "&peer_id=%s", peer_id);
+    dprintf(sock, "&port=%d", 6881);
+    dprintf(sock, "&uploaded=%lu", uploaded);
+    dprintf(sock, "&downloaded=%lu", downloaded);
+    dprintf(sock, "&left=%lu", length);
+    dprintf(sock, "&compact=1");
+    dprintf(sock, " HTTP/1.0\r\n");
+
+    // FIXME: This should have port, but only if present
+    dprintf(sock, "Host: %s\r\n", url->host);
+    dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
+    dprintf(sock, "Accept: */*\r\n");
+    dprintf(sock, "\r\n");
+
+    return sock;
+}
+
 char *read_line(char *start, char *end, char **ret) {
     if (start >= end) return NULL;
     char *p = start;
@@ -96,70 +136,8 @@ char *read_line(char *start, char *end, char **ret) {
     return p + 2 >= end ? p + 1 : p + 2;
 }
 
-int peers_file(const char *fname) {
-    int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
-    if (!decoded) goto cleanup;
-    if (decoded->type != DICT) goto cleanup;
-    BencodedDict *dict = (BencodedDict *)decoded->data;
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto cleanup;
-    if (info->type != DICT) goto cleanup;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto cleanup;
-
-    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    if (!sha1_digest((const uint8_t*)info->start,
-                    (info->end - info->start),
-                    info_hash)) {;
-        goto cleanup;
-    }
-
-    BencodedValue *announce = bencoded_dict_value(dict, "announce");
-    if (!announce) goto cleanup;
-    if (announce->type != BYTES) goto cleanup;
-
-    URL url = {0};
-    if (!parse_url((char *)announce->data,
-                (char *)announce->data + announce->size,
-                &url)) {
-        goto cleanup;
-    }
-
-    int sock = connect_url(&url);
-    if (sock == -1) {
-        goto cleanup;
-    }
-
-    dprintf(sock, "GET /");
-    if (url.path) dprintf(sock, "%s", url.path);
-    dprintf(sock, "?");
-    if (url.query) dprintf(sock, "%s&", url.query);
-
-    dprintf(sock, "info_hash=");
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        if (!is_url_print(info_hash[idx])) {
-            dprintf(sock, "%%%02x", info_hash[idx]);
-        } else {
-            dprintf(sock, "%c", info_hash[idx]);
-        }
-    }
-
-    const char *peer_id = "AdtLtU86udGzzN5m9GDs"; // 20 byte identifier. This is random data
-    dprintf(sock, "&peer_id=%s", peer_id);
-    dprintf(sock, "&port=%d", 6881);
-    dprintf(sock, "&uploaded=%d", 0);
-    dprintf(sock, "&downloaded=%d", 0);
-    dprintf(sock, "&left=%lu", length->size);
-    dprintf(sock, "&compact=1");
-    dprintf(sock, " HTTP/1.0\r\n");
-
-    // FIXME: This should have port, but only if present
-    dprintf(sock, "Host: %s\r\n", url.host);
-    dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
-    dprintf(sock, "Accept: */*\r\n");
-    dprintf(sock, "\r\n");
-
+BencodedValue *read_tracker_response(int sock) {
+    BencodedValue *ret = NULL;
 #define BUF_SIZE 4096
     char buf[BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
     int len = read(sock, buf, BUF_SIZE);
@@ -226,12 +204,54 @@ int peers_file(const char *fname) {
         goto cleanup;
     }
 
-    BencodedValue *response = decode_bencoded_bytes(p, end);
-    if (!response) goto cleanup;
-    if (response->type != DICT) goto cleanup;
+    ret = decode_bencoded_bytes(p, end);
+
+cleanup:
+    // FIXME if buffers are alloc'd in future, clean them here maybe
+
+    return ret;
+}
+
+
+int peers_file(const char *fname) {
+    int ret = EX_DATAERR;
+    BencodedValue *decoded = decode_bencoded_file(fname);
+    if (!decoded) goto end;
+    if (decoded->type != DICT) goto end;
+    BencodedDict *dict = (BencodedDict *)decoded->data;
+    BencodedValue *info = bencoded_dict_value(dict, "info");
+    if (!info) goto end;
+    if (info->type != DICT) goto end;
+    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
+    if (!length || length->type != INTEGER) goto end;
+
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
+    if (!sha1_digest((const uint8_t*)info->start,
+                    (info->end - info->start),
+                    info_hash)) {;
+        goto end;
+    }
+
+    BencodedValue *announce = bencoded_dict_value(dict, "announce");
+    if (!announce) goto end;
+    if (announce->type != BYTES) goto end;
+
+    URL url = {0};
+    if (!parse_url((char *)announce->data,
+                (char *)announce->data + announce->size,
+                &url)) {
+        goto end;
+    }
+
+    const char *peer_id = "AdtLtU86udGzzN5m9GDs"; // 20 byte identifier. This is random data
+    int sock = send_tracker_request(&url, info_hash, peer_id, 0, 0, length->size);
+
+    BencodedValue *response = read_tracker_response(sock);
+    if (!response) goto end;
+    if (response->type != DICT) goto end;
     dict = (BencodedDict *)response->data;
     BencodedValue *peers = bencoded_dict_value(dict, "peers");
-    if (peers->type != BYTES) goto cleanup;
+    if (peers->type != BYTES) goto end;
 
     for (int idx; (idx + 1) * 6 <= peers->size; idx ++) {
         printf("%d.%d.%d.%d",
@@ -244,17 +264,14 @@ int peers_file(const char *fname) {
                 ((uint8_t *)peers->data)[6 * idx + 5]);
     }
 
-cleanup:
+end:
     if (sock != -1) close(sock);
     if (decoded) {
         free((void*)decoded->start);
         free_bencoded_value(decoded);
     }
-    if (response) free_bencoded_value(decoded); // No memory allocated here (all on stack with buf)
-    if (errno) {
-        int ret = errno;
-        return ret;
-    }
+    if (response) free_bencoded_value(response); // No memory allocated here (all on stack with buf)
+    if (errno) ret = errno;
     return ret;
 }
 
