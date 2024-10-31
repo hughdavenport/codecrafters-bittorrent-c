@@ -380,6 +380,41 @@ end:
     return ret;
 }
 
+int connect_peer(const char *host, const char *port) {
+    struct addrinfo hints = {0};
+    struct addrinfo *result, *rp = NULL;
+    int ret = -1;
+    size_t len;
+    ssize_t nread;
+
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;
+
+    ret = getaddrinfo(host, port, &hints, &result);
+    if (ret != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
+        return ret;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        ret = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (ret == -1)
+            continue;
+
+        if (connect(ret, rp->ai_addr, rp->ai_addrlen) == 0)
+            break; // Success
+
+        close(ret);
+        ret = -1;
+    }
+
+    freeaddrinfo(result);
+
+    return ret; // Either -1, or a file descriptor of a connected socket
+}
+
 int handshake(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
@@ -412,14 +447,28 @@ int handshake(const char *fname, const char *peer) {
     }
     // FIXME else should we validate supplied peer is on tracker?
 
+    ret = EX_USAGE;
+    char *colon = index(peer, ':');
+    if (colon == NULL) goto end;
+    *colon = 0;
+    ret = EX_UNAVAILABLE;
+    int sock = connect_peer(peer, colon + 1);
+    *colon = ':';
+    if (sock == -1) goto end;
 
+
+    ret = EX_PROTOCOL;
+
+    // FIXME do stuff
 
     ret = EX_OK;
 end:
-    if (errno) {
-        int ret = errno;
-        return ret;
+    if (sock != -1) close(sock);
+    if (decoded) {
+        free((void*)decoded->start);
+        free_bencoded_value(decoded);
     }
+    if (errno) ret = errno;
     return ret;
 }
 
