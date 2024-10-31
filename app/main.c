@@ -443,8 +443,8 @@ int handshake(const char *fname, const char *peer) {
             goto end;
         }
         peer = temp;
-        fprintf(stderr, "Using peer %s\n", peer);
     }
+    fprintf(stderr, "Using peer %s\n", peer);
     // FIXME else should we validate supplied peer is on tracker?
 
     ret = EX_USAGE;
@@ -458,6 +458,29 @@ int handshake(const char *fname, const char *peer) {
 
 
     ret = EX_PROTOCOL;
+    dprintf(sock, "%c", 19);
+    dprintf(sock, "BitTorrent protocol");
+    dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
+    dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
+    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+        dprintf(sock, "%c", info_hash[idx]);
+    }
+    dprintf(sock, "%s", PEER_ID);
+
+#define BUF_SIZE 4096
+    char buf[BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
+    int len = read(sock, buf, BUF_SIZE);
+
+    printf("read %d bytes.\n", len);
+    for (int idx = 0; idx < len; ) {
+        printf("%02x", (uint8_t)buf[idx]);
+        idx ++;
+        if (idx % 16 == 0) {
+            printf("\n");
+            continue;
+        }
+        if (idx % 2 == 0) printf(" ");
+    }
 
     // FIXME do stuff
 
