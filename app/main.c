@@ -17,9 +17,13 @@
 #define BENCODE_IMPLEMENTATION
 #include "bencode.h"
 
+#define s(str) str, strlen(str)
 
 // 20 byte identifier. This is random data
 #define PEER_ID "AdtLtU86udGzzN5m9GDs"
+#define PEER_ID_SIZE 20
+#define HANDSHAKE_PROTOCOL "BitTorrent protocol"
+#define HANDSHAKE_SIZE 68
 
 int info_file(const char *fname) {
     int ret = EX_DATAERR;
@@ -152,7 +156,6 @@ BencodedValue *read_tracker_response(int sock) {
 
     p = read_line(p, end, &line);
     char *space = index(line, ' ');
-#define s(str) str, strlen(str)
     if (space == NULL || strncmp(line, s("HTTP/")) != 0) {
         fprintf(stderr, "Wrong protocol recieved: %s\n", line);
         goto cleanup;
@@ -458,31 +461,42 @@ int handshake(const char *fname, const char *peer) {
 
 
     ret = EX_PROTOCOL;
-    dprintf(sock, "%c", 19);
-    dprintf(sock, "BitTorrent protocol");
-    dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
-    dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
+    int len = 0;
+    len += dprintf(sock, "%c", (char)strlen(HANDSHAKE_PROTOCOL));
+    len += dprintf(sock, HANDSHAKE_PROTOCOL);
+    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
+    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        dprintf(sock, "%c", info_hash[idx]);
+        len += dprintf(sock, "%c", info_hash[idx]);
     }
-    dprintf(sock, "%s", PEER_ID);
+    len += dprintf(sock, "%s", PEER_ID);
+    fprintf(stderr, "wrote %d bytes.\n", len);
+    if (len != HANDSHAKE_SIZE) goto end;
 
-#define BUF_SIZE 4096
-    char buf[BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
-    int len = read(sock, buf, BUF_SIZE);
+    uint8_t response[HANDSHAKE_SIZE];
+    len = read(sock, response, HANDSHAKE_SIZE);
+    fprintf(stderr, "read %d bytes.\n", len);
+    if (len != HANDSHAKE_SIZE) goto end;
 
-    printf("read %d bytes.\n", len);
-    for (int idx = 0; idx < len; ) {
-        printf("%02x", (uint8_t)buf[idx]);
-        idx ++;
-        if (idx % 16 == 0) {
-            printf("\n");
-            continue;
+    if (response[0] != strlen(HANDSHAKE_PROTOCOL)) goto end;
+    if (strncmp(response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto end;
+    uint8_t *reserved = response + response[0] + 1;
+    for (int idx = 0; idx < 8; idx ++) {
+        if (reserved[idx] != 0) {
+            fprintf(stderr, "WARN: reserved[%d] = 0x%02x\n", idx, reserved[idx]);
         }
-        if (idx % 2 == 0) printf(" ");
     }
-
-    // FIXME do stuff
+    // FIXME: work out what reserved bits mean what extension
+    if (memcmp(reserved + 8, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
+        fprintf(stderr, "Recieved invalid hash\n");
+        goto end;
+    }
+    uint8_t *peer_id = reserved + 8 + SHA1_DIGEST_BYTE_LENGTH;
+    printf("Peer ID: ");
+    for (int idx = 0; idx < PEER_ID_SIZE; idx ++) {
+        printf("%02x", peer_id[idx]);
+    }
+    printf("\n");
 
     ret = EX_OK;
 end:
