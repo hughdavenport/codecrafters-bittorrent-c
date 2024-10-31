@@ -6,6 +6,8 @@
 #include <sysexits.h>
 #include <errno.h>
 
+#include <time.h>
+
 #define SHA1_IMPLEMENTATION
 #include "sha1.h"
 
@@ -14,6 +16,10 @@
 
 #define BENCODE_IMPLEMENTATION
 #include "bencode.h"
+
+
+// 20 byte identifier. This is random data
+#define PEER_ID "AdtLtU86udGzzN5m9GDs"
 
 int info_file(const char *fname) {
     int ret = EX_DATAERR;
@@ -81,7 +87,6 @@ end:
 
 int send_tracker_request(URL *url,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        const char *peer_id,
         size_t uploaded, size_t downloaded, size_t length) {
     int sock = -1;
 
@@ -102,7 +107,7 @@ int send_tracker_request(URL *url,
         }
     }
 
-    dprintf(sock, "&peer_id=%s", peer_id);
+    dprintf(sock, "&peer_id=%s", PEER_ID);
     dprintf(sock, "&port=%d", 6881);
     dprintf(sock, "&uploaded=%lu", uploaded);
     dprintf(sock, "&downloaded=%lu", downloaded);
@@ -243,8 +248,7 @@ int peers_file(const char *fname) {
         goto end;
     }
 
-    const char *peer_id = "AdtLtU86udGzzN5m9GDs"; // 20 byte identifier. This is random data
-    int sock = send_tracker_request(&url, info_hash, peer_id, 0, 0, length->size);
+    int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
 
     BencodedValue *response = read_tracker_response(sock);
     if (!response) goto end;
@@ -309,6 +313,61 @@ end:
         return ret;
     }
     if (f) if (!fclose(f)) return errno;
+    return ret;
+}
+
+// Enough space for xxx.xxx.xxx.xxx:xxxxx\0
+#define PEER_STRING_SIZE 23
+int random_peer(BencodedDict *dict,
+        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+        char peer[PEER_STRING_SIZE]) {
+    int ret = EX_DATAERR;
+    BencodedValue *info = bencoded_dict_value(dict, "info");
+    if (!info) goto end;
+    if (info->type != DICT) goto end;
+    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
+    if (!length || length->type != INTEGER) goto end;
+
+    BencodedValue *announce = bencoded_dict_value(dict, "announce");
+    if (!announce) goto end;
+    if (announce->type != BYTES) goto end;
+
+    URL url = {0};
+    if (!parse_url((char *)announce->data,
+                (char *)announce->data + announce->size,
+                &url)) {
+        goto end;
+    }
+
+    int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
+
+    BencodedValue *response = read_tracker_response(sock);
+    if (!response) goto end;
+    if (response->type != DICT) goto end;
+    dict = (BencodedDict *)response->data;
+    BencodedValue *peers = bencoded_dict_value(dict, "peers");
+    if (peers->type != BYTES) goto end;
+
+    srand(time(NULL));
+    int idx = random() % (peers->size / 6);
+    if (snprintf(peer, PEER_STRING_SIZE, "%d.%d.%d.%d:%d",
+            ((uint8_t *)peers->data)[6 * idx + 0],
+            ((uint8_t *)peers->data)[6 * idx + 1],
+            ((uint8_t *)peers->data)[6 * idx + 2],
+            ((uint8_t *)peers->data)[6 * idx + 3],
+            256 * ((uint8_t *)peers->data)[6 * idx + 4] +
+            ((uint8_t *)peers->data)[6 * idx + 5]) > PEER_STRING_SIZE) {
+        // FIXME This may signify IPv6
+        fprintf(stderr, "%s:%d: UNREACHABLE", __FILE__, __LINE__);
+        ret = EX_SOFTWARE;
+    } else {
+        ret = EX_OK;
+    }
+
+end:
+    if (sock != -1) close(sock);
+    if (response) free_bencoded_value(response); // No memory allocated here (all on stack with buf)
+    if (errno) ret = errno;
     return ret;
 }
 
