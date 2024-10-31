@@ -250,7 +250,7 @@ BencodedValue *decode_bencoded_file(const char* fname) {
 
     ret = decode_bencoded_bytes(data, data + fsize);
 end:
-    fclose(f);
+    if (f) fclose(f);
     return ret;
 }
 
