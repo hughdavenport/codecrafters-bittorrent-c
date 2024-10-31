@@ -248,14 +248,18 @@ int peers_file(const char *fname) {
         goto end;
     }
 
+    ret = EX_UNAVAILABLE;
     int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
+    if (sock == -1) goto end;
 
+    ret = EX_PROTOCOL;
     BencodedValue *response = read_tracker_response(sock);
     if (!response) goto end;
     if (response->type != DICT) goto end;
     dict = (BencodedDict *)response->data;
     BencodedValue *peers = bencoded_dict_value(dict, "peers");
     if (peers->type != BYTES) goto end;
+    if (peers->size % 6 != 0) goto end;
 
     for (int idx; (idx + 1) * 6 <= peers->size; idx ++) {
         printf("%d.%d.%d.%d",
@@ -268,6 +272,7 @@ int peers_file(const char *fname) {
                 ((uint8_t *)peers->data)[6 * idx + 5]);
     }
 
+    ret = EX_OK;
 end:
     if (sock != -1) close(sock);
     if (decoded) {
@@ -304,8 +309,8 @@ int hash_file(const char *fname) {
         printf("%02x", info_hash[idx]);
     }
     printf("\n");
-    ret = EX_SOFTWARE;
 
+    ret = EX_OK;
 end:
     if (errno) {
         int ret = errno;
@@ -339,14 +344,18 @@ int random_peer(BencodedDict *dict,
         goto end;
     }
 
+    ret = EX_UNAVAILABLE;
     int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
+    if (sock == -1) goto end;
 
+    ret = EX_PROTOCOL;
     BencodedValue *response = read_tracker_response(sock);
     if (!response) goto end;
     if (response->type != DICT) goto end;
     dict = (BencodedDict *)response->data;
     BencodedValue *peers = bencoded_dict_value(dict, "peers");
     if (peers->type != BYTES) goto end;
+    if (peers->size % 6 != 0) goto end;
 
     srand(time(NULL));
     int idx = random() % (peers->size / 6);
