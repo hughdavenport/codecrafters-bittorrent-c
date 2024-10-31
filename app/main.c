@@ -418,6 +418,27 @@ int connect_peer(const char *host, const char *port) {
     return ret; // Either -1, or a file descriptor of a connected socket
 }
 
+void hexdump(uint8_t *buf, size_t len) {
+    for (int idx = 0; idx < len; ) {
+        if (idx % 16 == 0) printf("%08x:", idx);
+        if (idx % 2 == 0) printf(" ");
+        printf("%02x", (uint8_t)buf[idx]);
+        idx ++;
+        if (idx % 16 == 0) {
+            printf("  ");
+            for (int i = 16 * ((idx / 16) - 1); i < idx; i++) {
+                if (isprint(buf[i])) {
+                    printf("%c", buf[i]);
+                } else {
+                    printf(".");
+                }
+            }
+            printf("\n");
+            continue;
+        }
+    }
+}
+
 int handshake(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
