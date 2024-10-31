@@ -371,6 +371,49 @@ end:
     return ret;
 }
 
+int handshake(const char *fname, const char *peer) {
+    int ret = EX_DATAERR;
+    BencodedValue *decoded = decode_bencoded_file(fname);
+    if (!decoded) goto end;
+    if (decoded->type != DICT) goto end;
+    BencodedDict *dict = (BencodedDict *)decoded->data;
+    BencodedValue *info = bencoded_dict_value(dict, "info");
+    if (!info) goto end;
+    if (info->type != DICT) goto end;
+    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
+    if (!length || length->type != INTEGER) goto end;
+
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
+    if (!sha1_digest((const uint8_t*)info->start,
+                    (info->end - info->start),
+                    info_hash)) {;
+        goto end;
+    }
+
+    if (peer == NULL) {
+        // pick a random one, useful for testing
+        char temp[PEER_STRING_SIZE];
+        int random_ret = random_peer(dict, info_hash, temp);
+        if (random_ret != EX_OK) {
+            ret = random_ret;
+            goto end;
+        }
+        peer = temp;
+        fprintf(stderr, "Using peer %s\n", peer);
+    }
+    // FIXME else should we validate supplied peer is on tracker?
+
+
+
+    ret = EX_OK;
+end:
+    if (errno) {
+        int ret = errno;
+        return ret;
+    }
+    return ret;
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -405,6 +448,11 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(command, "peers") == 0) {
         const char* fname = argv[2];
         return peers_file(fname);
+    } else if (strcmp(command, "handshake") == 0) {
+        const char* fname = argv[2];
+        const char *peer = NULL;
+        if (argc >= 3) peer = argv[3];
+        return handshake(fname, peer);
     } else if (strcmp(command, "parse") == 0) {
         int ret = EX_OK;
         URL url = {0};
