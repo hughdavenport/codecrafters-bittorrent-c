@@ -26,6 +26,18 @@
 #define HANDSHAKE_SIZE 68
 #define RESERVED_SIZE 8
 
+typedef enum:uint8_t {
+    CHOKE,
+    UNCHOKE,
+    INTERESTED,
+    NOT_INTERESTED,
+    HAVE,
+    BITFIELD,
+    REQUEST,
+    PIECE,
+    CANCEL
+} PeerMessageType;
+
 int info_file(const char *fname) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
@@ -595,6 +607,18 @@ bool parse_download_piece(int argc,  char **argv,  char *program,
     return true;
 }
 
+bool read_full(int sock, void *data, size_t length) {
+    ssize_t bytes_read = 0;
+    while (bytes_read < length) {
+        ssize_t read_ret = read(sock, data + bytes_read, length - bytes_read);
+        if (read_ret == 0) return false;
+        if (read_ret == -1) return false;
+        bytes_read += read_ret;
+        printf("read %lu bytes out of %lu\n", bytes_read, length);
+    }
+    return true;
+}
+
 int download_piece(int argc, char **argv, char *program) {
     // download_piece -o output sample.torrent <piece>
     char *fname = NULL;
@@ -607,11 +631,80 @@ int download_piece(int argc, char **argv, char *program) {
     FILE *out = output ? fopen(output, "w") : stdout;
     if (out == NULL) return EX_CANTCREAT;
 
-    fprintf(stderr, "UNIMPLEMENTED\n");
+    int ret = EX_DATAERR;
+    BencodedValue *decoded = decode_bencoded_file(fname);
+    if (!decoded) goto end;
+    if (decoded->type != DICT) goto end;
+    BencodedDict *dict = (BencodedDict *)decoded->data;
+    BencodedValue *info = bencoded_dict_value(dict, "info");
+    if (!info) goto end;
+    if (info->type != DICT) goto end;
+    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
+    if (!length || length->type != INTEGER) goto end;
 
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
+    if (!sha1_digest((const uint8_t*)info->start,
+                    (info->end - info->start),
+                    info_hash)) {;
+        goto end;
+    }
+
+    char peer[PEER_STRING_SIZE];
+    int random_ret = random_peer(dict, info_hash, peer);
+    if (random_ret != EX_OK) {
+        ret = random_ret;
+        goto end;
+    }
+    fprintf(stderr, "Using peer %s\n", peer);
+    // FIXME else should we validate supplied peer is on tracker?
+
+    ret = EX_USAGE;
+    char *colon = index(peer, ':');
+    if (colon == NULL) goto end;
+    *colon = 0;
+    ret = EX_UNAVAILABLE;
+    uint8_t response[HANDSHAKE_SIZE];
+    int sock = handshake_peer(peer, colon + 1, info_hash, response);
+    *colon = ':';
+    if (sock == -1) goto end;
+    ret = EX_PROTOCOL;
+    if (sock < 0) goto end;
+
+    // FIXME multiprocess
+
+    uint32_t packet_length = 0;
+    while (packet_length == 0) {
+        if (!read_full(sock, &packet_length, sizeof(packet_length))) goto end;
+        packet_length = ntohl(packet_length);
+        fprintf(stderr, "packet length = %u\n", packet_length);
+        if (packet_length > 0) {
+            PeerMessageType type = CHOKE;
+            if (!read_full(sock, &type, sizeof(type))) goto end;
+            switch (type) {
+                case BITFIELD: {
+                    fprintf(stderr, "UNIMPLEMENTED\n");
+                    ret = EX_SOFTWARE;
+                    goto end;
+                }; break;
+
+                default:
+                    fprintf(stderr, "UNIMPLEMENTED type\n");
+                    ret = EX_SOFTWARE;
+                    goto end;
+            }
+        }
+    }
+
+    fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
 end:
+    if (sock != -1) close(sock);
+    if (decoded) {
+        free((void*)decoded->start);
+        free_bencoded_value(decoded);
+    }
     if (out && out != stdin) fclose(out);
-    return EX_OK;
+    if (errno) ret = errno;
+    return ret;
 }
 
 int main(int argc, char* argv[]) {
