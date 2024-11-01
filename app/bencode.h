@@ -111,119 +111,119 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
     char first = bencoded_value[0];
     switch (first) {
         case '0' ... '9': {
-                              // FIXME use strtol to detect errors
-                              int length = atoi(bencoded_value);
-                              const char* colon_index = strchr(bencoded_value, ':');
-                              if (colon_index == NULL) {
-                                  fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
-                                  return NULL;
-                              }
-                              const unsigned char* start = colon_index + 1;
-                              void *data = malloc(length);
-                              if (!data) return NULL;
-                              memcpy(data, start, length);
-                              BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-                              if (ret == NULL) return NULL;
-                              ret->type = BYTES;
-                              ret->start = bencoded_value;
-                              ret->end = start + length;
-                              ret->size = length;
-                              ret->data = data;
-                              return ret;
-                          }; break;
+            // FIXME use strtol to detect errors
+            int length = atoi(bencoded_value);
+            const char* colon_index = strchr(bencoded_value, ':');
+            if (colon_index == NULL) {
+                fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
+                return NULL;
+            }
+            const unsigned char* start = colon_index + 1;
+            void *data = malloc(length);
+            if (!data) return NULL;
+            memcpy(data, start, length);
+            BencodedValue *ret = calloc(1, sizeof(BencodedValue));
+            if (ret == NULL) return NULL;
+            ret->type = BYTES;
+            ret->start = bencoded_value;
+            ret->end = start + length;
+            ret->size = length;
+            ret->data = data;
+            return ret;
+        }; break;
 
         case 'i': {
-                      const uint8_t*str = bencoded_value + 1;
-                      size_t num = 0;
-                      if (*str == '-') str++;
-                      while (str < end && *str != 'e') {
-                          num = 10 * num + (*(str++) - '0');
-                      }
-                      if (bencoded_value[1] == '-') num = -num;
-                      // FIXME assert missing e?
-                      BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-                      if (ret == NULL) return ret;
-                      ret->type = INTEGER;
-                      ret->start = bencoded_value;
-                      ret->end = str + 1;
-                      ret->size = num;
-                      ret->data = NULL;
-                      return ret;
-                  }; break;
+            const uint8_t*str = bencoded_value + 1;
+            size_t num = 0;
+            if (*str == '-') str++;
+            while (str < end && *str != 'e') {
+                num = 10 * num + (*(str++) - '0');
+            }
+            if (bencoded_value[1] == '-') num = -num;
+            // FIXME assert missing e?
+            BencodedValue *ret = calloc(1, sizeof(BencodedValue));
+            if (ret == NULL) return ret;
+            ret->type = INTEGER;
+            ret->start = bencoded_value;
+            ret->end = str + 1;
+            ret->size = num;
+            ret->data = NULL;
+            return ret;
+        }; break;
 
         case 'l': {
-                      const uint8_t*str = bencoded_value + 1;
-                      BencodedList *l = calloc(1, sizeof(BencodedList));
-                      if (!l) {
-                          fprintf(stderr, "Out of memory\n");
-                          return NULL;
-                      }
-                      BencodedList *data = l;
-                      size_t size = 0;
-                      while (str < end && *str != 'e') {
-                          size ++;
-                          l->value = decode_bencoded_bytes(str, end);
-                          if (!l->value || l->value->type == UNKNOWN) return NULL;
-                          str = l->value->end;
-                          if (str && *str != 'e') {
-                              l->next = calloc(1, sizeof(BencodedList));
-                              if (!l->next) {
-                                  fprintf(stderr, "Out of memory\n");
-                                  return NULL;
-                              }
-                              l = l->next;
-                          }
-                      }
-                      // FIXME assert missing e?
-                      BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-                      if (ret == NULL) return ret;
-                      ret->type = LIST;
-                      ret->start = bencoded_value;
-                      ret->end = str + 1;
-                      ret->size = size;
-                      ret->data = data;
-                      return ret;
-                  }; break;
+            const uint8_t*str = bencoded_value + 1;
+            BencodedList *l = calloc(1, sizeof(BencodedList));
+            if (!l) {
+                fprintf(stderr, "Out of memory\n");
+                return NULL;
+            }
+            BencodedList *data = l;
+            size_t size = 0;
+            while (str < end && *str != 'e') {
+                size ++;
+                l->value = decode_bencoded_bytes(str, end);
+                if (!l->value || l->value->type == UNKNOWN) return NULL;
+                str = l->value->end;
+                if (str && *str != 'e') {
+                    l->next = calloc(1, sizeof(BencodedList));
+                    if (!l->next) {
+                        fprintf(stderr, "Out of memory\n");
+                        return NULL;
+                    }
+                    l = l->next;
+                }
+            }
+            // FIXME assert missing e?
+            BencodedValue *ret = calloc(1, sizeof(BencodedValue));
+            if (ret == NULL) return ret;
+            ret->type = LIST;
+            ret->start = bencoded_value;
+            ret->end = str + 1;
+            ret->size = size;
+            ret->data = data;
+            return ret;
+        }; break;
 
         case 'd': {
-                      const uint8_t*str = bencoded_value + 1;
-                      BencodedDict *d = calloc(1, sizeof(BencodedDict));
-                      if (!d) {
-                          fprintf(stderr, "Out of memory\n");
-                          return NULL;
-                      }
-                      BencodedDict *data = d;
-                      size_t size = 0;
-                      while (str < end && *str != 'e') {
-                          size ++;
+            const uint8_t*str = bencoded_value + 1;
+            BencodedDict *d = calloc(1, sizeof(BencodedDict));
+            if (!d) {
+                fprintf(stderr, "Out of memory\n");
+                return NULL;
+            }
+            BencodedDict *data = d;
+            size_t size = 0;
+            while (str < end && *str != 'e') {
+                size ++;
 
-                          d->key = decode_bencoded_bytes(str, end);
-                          if (!d->key || d->key->type != BYTES) return NULL;
-                          str = d->key->end;
+                d->key = decode_bencoded_bytes(str, end);
+                if (!d->key || d->key->type != BYTES) return NULL;
+                str = d->key->end;
 
-                          d->value = decode_bencoded_bytes(str, end);
-                          if (!d->value || d->value->type == UNKNOWN) return NULL;
-                          str = d->value->end;
+                d->value = decode_bencoded_bytes(str, end);
+                if (!d->value || d->value->type == UNKNOWN) return NULL;
+                str = d->value->end;
 
-                          if (str < end && *str != 'e') {
-                              d->next = calloc(1, sizeof(BencodedDict));
-                              if (!d->next) {
-                                  fprintf(stderr, "Out of memory\n");
-                                  return NULL;
-                              }
-                              d = d->next;
-                          }
-                      }
-                      // FIXME assert missing e?
-                      BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-                      if (ret == NULL) return ret;
-                      ret->type = DICT;
-                      ret->start = bencoded_value;
-                      ret->end = str + 1;
-                      ret->size = size;
-                      ret->data = data;
-                      return ret;
-                  }; break;
+                if (str < end && *str != 'e') {
+                    d->next = calloc(1, sizeof(BencodedDict));
+                    if (!d->next) {
+                        fprintf(stderr, "Out of memory\n");
+                        return NULL;
+                    }
+                    d = d->next;
+                }
+            }
+            // FIXME assert missing e?
+            BencodedValue *ret = calloc(1, sizeof(BencodedValue));
+            if (ret == NULL) return ret;
+            ret->type = DICT;
+            ret->start = bencoded_value;
+            ret->end = str + 1;
+            ret->size = size;
+            ret->data = data;
+            return ret;
+        }; break;
 
     }
 
