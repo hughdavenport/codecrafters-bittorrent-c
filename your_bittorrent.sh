@@ -7,5 +7,5 @@
 # DON'T EDIT THIS!
 set -e
 tmpFile=$(mktemp)
-gcc -Wall -Wextra -lcurl -lcrypto app/*.c -o $tmpFile
+gcc -Wall -Wextra -Wpedantic -lcurl -lcrypto app/*.c -o $tmpFile
 exec "$tmpFile" "$@"

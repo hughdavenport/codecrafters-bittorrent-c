@@ -29,7 +29,7 @@
 // 2^14 (16 kiB)
 #define BLOCK_SIZE 16384
 
-typedef enum:uint8_t {
+typedef enum {
     CHOKE,
     UNCHOKE,
     INTERESTED,
@@ -617,7 +617,7 @@ bool parse_download_piece(int argc,  char **argv,  char *program,
 bool read_full(int sock, void *data, size_t length) {
     ssize_t bytes_read = 0;
     while ((size_t)bytes_read < length) {
-        ssize_t read_ret = read(sock, data + bytes_read, length - bytes_read);
+        ssize_t read_ret = read(sock, (uint8_t *)data + bytes_read, length - bytes_read);
         if (read_ret <= 0) {
             fprintf(stderr, "ERROR Could only read %lu bytes out of %lu\n", bytes_read, length);
             return false;
@@ -631,7 +631,7 @@ bool read_full(int sock, void *data, size_t length) {
 bool write_full(int sock, void *data, size_t length) {
     ssize_t bytes_written = 0;
     while ((size_t)bytes_written < length) {
-        ssize_t ret = write(sock, data + bytes_written, length - bytes_written);
+        ssize_t ret = write(sock, (uint8_t *)data + bytes_written, length - bytes_written);
         if (ret <= 0) {
             fprintf(stderr, "ERROR Could only send %lu bytes out of %lu\n", bytes_written, length);
             return false;
@@ -713,7 +713,7 @@ int download_piece(int argc, char **argv, char *program) {
         fprintf(stderr, "packet length = %u\n", packet_length);
         if (packet_length > 0) {
             PeerMessageType type = CHOKE;
-            if (!read_full(sock, b(type))) goto end;
+            if (!read_full(sock, &type, 1)) goto end;
             switch (type) {
                 case UNCHOKE: {
                     // FIXME multiprocess
@@ -727,7 +727,7 @@ int download_piece(int argc, char **argv, char *program) {
                     for (size_t idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
                         payload.begin = htonl(idx * BLOCK_SIZE);
                         if (!write_full(sock, b(packet_length))) goto end;
-                        if (!write_full(sock, b(type))) goto end;
+                        if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
                     }
                     payload.length = piece_length->size % BLOCK_SIZE;
@@ -735,7 +735,7 @@ int download_piece(int argc, char **argv, char *program) {
                         packet_length = htonl(payload.length);
                         payload.begin = htonl(BLOCK_SIZE * (piece_length->size / BLOCK_SIZE));
                         if (!write_full(sock, b(packet_length))) goto end;
-                        if (!write_full(sock, b(type))) goto end;
+                        if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
                     }
 
@@ -748,7 +748,7 @@ int download_piece(int argc, char **argv, char *program) {
                     packet_length = htonl(1);
                     if (!write_full(sock, b(packet_length))) goto end;
                     type = INTERESTED;
-                    if (!write_full(sock, b(type))) goto end;
+                    if (!write_full(sock, &type, 1)) goto end;
 
                     packet_length = 0;
                 }; break;

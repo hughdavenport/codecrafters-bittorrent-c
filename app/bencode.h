@@ -104,8 +104,8 @@ void free_bencoded_value(BencodedValue *value) {
         case LIST: free_bencoded_list((BencodedList *)value->data); break;
         case DICT: free_bencoded_dict((BencodedDict *)value->data); break;
 
-        case INTEGER:
-        case UNKNOWN:
+        case INTEGER: break;
+        case UNKNOWN: break;
     }
     free(value);
 }
@@ -113,7 +113,16 @@ void free_bencoded_value(BencodedValue *value) {
 BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_t*end) {
     char first = bencoded_value[0];
     switch (first) {
-        case '0' ... '9': {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9': {
             // FIXME use strtol to detect errors
             int length = atoi((char *)bencoded_value);
             const char* colon_index = strchr((char *)bencoded_value, ':');
