@@ -7,5 +7,5 @@
 # DON'T EDIT THIS!
 set -e
 tmpFile=$(mktemp)
-gcc -lcurl -lcrypto app/*.c -ggdb -O0 -o $tmpFile
+gcc -Wall -Wextra -Wpedantic -lcurl -lcrypto app/*.c -ggdb -O0 -o $tmpFile
 exec gdb --args "$tmpFile" "$@"
