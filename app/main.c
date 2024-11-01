@@ -167,6 +167,42 @@ char *read_line(char *start, char *end, char **ret) {
     return p + 2 >= end ? p + 1 : p + 2;
 }
 
+void hexdump(uint8_t *buf, size_t len) {
+    for (size_t idx = 0; idx < len; ) {
+        if (idx % 16 == 0) printf("%08lx:", idx);
+        if (idx % 2 == 0) printf(" ");
+        printf("%02x", (uint8_t)buf[idx]);
+        idx ++;
+        if (idx % 16 == 0) {
+            printf("  ");
+            for (size_t i = 16 * ((idx / 16) - 1); i < idx; i++) {
+                if (isprint(buf[i])) {
+                    printf("%c", buf[i]);
+                } else {
+                    printf(".");
+                }
+            }
+            printf("\n");
+            continue;
+        }
+    }
+    if (len % 16 != 0) {
+        for (size_t idx = len % 16; idx < 16; idx ++) {
+            if (idx % 2 == 0) printf(" ");
+            printf("  ");
+        }
+        printf("  ");
+        for (size_t i = 16 * (len / 16); i < len; i ++) {
+            if (isprint(buf[i])) {
+                printf("%c", buf[i]);
+            } else {
+                printf(".");
+            }
+        }
+        printf("\n");
+    }
+}
+
 BencodedValue *read_tracker_response(int sock) {
     BencodedValue *ret = NULL;
 #define BUF_SIZE 4096
@@ -372,6 +408,7 @@ int random_peer(BencodedDict *dict,
     ret = EX_UNAVAILABLE;
     int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
     if (sock == -1) goto end;
+    errno = 0; // networks can be weird, but we got a valid sock now?
 
     ret = EX_PROTOCOL;
     BencodedValue *response = read_tracker_response(sock);
@@ -397,6 +434,7 @@ int random_peer(BencodedDict *dict,
     } else {
         ret = EX_OK;
     }
+    printf("got to end, peer = %s, ret = %d\n", peer, ret);
 
 end:
     if (sock != -1) close(sock);
@@ -436,27 +474,6 @@ int connect_peer(const char *host, const char *port) {
     freeaddrinfo(result);
 
     return ret; // Either -1, or a file descriptor of a connected socket
-}
-
-void hexdump(uint8_t *buf, size_t len) {
-    for (size_t idx = 0; idx < len; ) {
-        if (idx % 16 == 0) printf("%08lx:", idx);
-        if (idx % 2 == 0) printf(" ");
-        printf("%02x", (uint8_t)buf[idx]);
-        idx ++;
-        if (idx % 16 == 0) {
-            printf("  ");
-            for (size_t i = 16 * ((idx / 16) - 1); i < idx; i++) {
-                if (isprint(buf[i])) {
-                    printf("%c", buf[i]);
-                } else {
-                    printf(".");
-                }
-            }
-            printf("\n");
-            continue;
-        }
-    }
 }
 
 int handshake_peer(const char *host,
@@ -705,6 +722,10 @@ int download_piece(int argc, char **argv, char *program) {
 
     // FIXME multiprocess
 
+    if (sizeof(RequestPayload) != 16) {
+        fprintf(stderr, "sizeof(RequestPayload) != 16 (got %ld)\n", sizeof(RequestPayload));
+    }
+
     uint32_t packet_length = 0;
     while (true) {
 #define b(var) &var, sizeof(var)
@@ -714,15 +735,23 @@ int download_piece(int argc, char **argv, char *program) {
         if (packet_length > 0) {
             PeerMessageType type = CHOKE;
             if (!read_full(sock, &type, 1)) goto end;
+            packet_length -= 1;
             switch (type) {
                 case UNCHOKE: {
+                    fprintf(stderr, "got UNCHOKE\n");
                     // FIXME multiprocess
+                    while (packet_length > 0) {
+                        uint8_t payload;
+                        if (!read_full(sock, b(payload))) goto end;
+                        packet_length -= 1;
+                    }
                     type = REQUEST;
                     RequestPayload payload = {
                         .index = htonl(piece),
                         .begin = 0,
                         .length = htonl(BLOCK_SIZE)
                     };
+
                     packet_length = htonl(sizeof(payload) + 1);
                     for (size_t idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
                         payload.begin = htonl(idx * BLOCK_SIZE);
@@ -743,8 +772,12 @@ int download_piece(int argc, char **argv, char *program) {
                 }; break;
 
                 case BITFIELD: {
-                    uint8_t payload;
-                    if (!read_full(sock, b(payload))) goto end;
+                    fprintf(stderr, "got BITFIELD\n");
+                    while (packet_length > 0) {
+                        uint8_t payload;
+                        if (!read_full(sock, b(payload))) goto end;
+                        packet_length -= 1;
+                    }
                     packet_length = htonl(1);
                     if (!write_full(sock, b(packet_length))) goto end;
                     type = INTERESTED;
@@ -755,6 +788,11 @@ int download_piece(int argc, char **argv, char *program) {
 
 
                 default:
+                    if (type > CANCEL) {
+                        fprintf(stderr, "%s:%d: UNREACHABLE: Bad type %d\n", __FILE__, __LINE__, type);
+                        ret = EX_SOFTWARE;
+                        goto end;
+                    }
                     fprintf(stderr, "%s:%d: UNIMPLEMENTED type %d\n", __FILE__, __LINE__, type);
                     ret = EX_SOFTWARE;
                     goto end;
