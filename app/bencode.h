@@ -103,6 +103,9 @@ void free_bencoded_value(BencodedValue *value) {
         case BYTES: free(value->data); break;
         case LIST: free_bencoded_list((BencodedList *)value->data); break;
         case DICT: free_bencoded_dict((BencodedDict *)value->data); break;
+
+        case INTEGER:
+        case UNKNOWN:
     }
     free(value);
 }

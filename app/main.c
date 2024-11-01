@@ -211,7 +211,7 @@ BencodedValue *read_tracker_response(int sock) {
 
     long content_length = 0;
     // FIXME: read more?
-    while (p = read_line(p, end, &line)) {
+    while ((p = read_line(p, end, &line))) {
         if (*line == 0) {
             break;
         }

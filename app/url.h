@@ -136,7 +136,6 @@ bool parse_url(char *start, char *end, URL *ret) {
 
     // At the start, this could be a "userpart", or host.
     if (p < end) ret->user = ret->host = p;
-loop:
     while (p && p < end) {
         switch (*p) {
             case ':': {
@@ -254,8 +253,6 @@ int connect_url(URL *url) {
     struct addrinfo hints = {0};
     struct addrinfo *result, *rp = NULL;
     int ret = -1;
-    size_t len;
-    ssize_t nread;
 
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
