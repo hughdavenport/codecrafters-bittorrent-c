@@ -91,7 +91,7 @@ int info_file(const char *fname) {
     if (!pieces) goto end;
     if (pieces->type != BYTES) goto end;
     printf("Piece Hashes:\n");
-    for (int piece = 0; piece < pieces->size / SHA1_DIGEST_BYTE_LENGTH; piece ++) {
+    for (size_t piece = 0; piece < pieces->size / SHA1_DIGEST_BYTE_LENGTH; piece ++) {
         for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
             printf("%02x", ((uint8_t *)pieces->data)[piece * SHA1_DIGEST_BYTE_LENGTH + idx]);
         }
@@ -286,7 +286,7 @@ int peers_file(const char *fname) {
     if (peers->type != BYTES) goto end;
     if (peers->size % 6 != 0) goto end;
 
-    for (int idx; (idx + 1) * 6 <= peers->size; idx ++) {
+    for (size_t idx; (idx + 1) * 6 <= peers->size; idx ++) {
         printf("%d.%d.%d.%d",
                 ((uint8_t *)peers->data)[6 * idx + 0],
                 ((uint8_t *)peers->data)[6 * idx + 1],
@@ -320,7 +320,7 @@ int hash_file(const char *fname) {
 
     char *data = (char *)malloc(fsize);
     size_t read_total = 0;
-    while (read_total < fsize) {
+    while (read_total < (unsigned)fsize) {
         size_t read_count = fread(data, 1, fsize, f);
         if (read_count == 0) goto end;
         read_total += read_count;
@@ -439,14 +439,14 @@ int connect_peer(const char *host, const char *port) {
 }
 
 void hexdump(uint8_t *buf, size_t len) {
-    for (int idx = 0; idx < len; ) {
-        if (idx % 16 == 0) printf("%08x:", idx);
+    for (size_t idx = 0; idx < len; ) {
+        if (idx % 16 == 0) printf("%08lx:", idx);
         if (idx % 2 == 0) printf(" ");
         printf("%02x", (uint8_t)buf[idx]);
         idx ++;
         if (idx % 16 == 0) {
             printf("  ");
-            for (int i = 16 * ((idx / 16) - 1); i < idx; i++) {
+            for (size_t i = 16 * ((idx / 16) - 1); i < idx; i++) {
                 if (isprint(buf[i])) {
                     printf("%c", buf[i]);
                 } else {
@@ -616,7 +616,7 @@ bool parse_download_piece(int argc,  char **argv,  char *program,
 
 bool read_full(int sock, void *data, size_t length) {
     ssize_t bytes_read = 0;
-    while (bytes_read < length) {
+    while ((size_t)bytes_read < length) {
         ssize_t read_ret = read(sock, data + bytes_read, length - bytes_read);
         if (read_ret <= 0) {
             fprintf(stderr, "ERROR Could only read %lu bytes out of %lu\n", bytes_read, length);
@@ -630,7 +630,7 @@ bool read_full(int sock, void *data, size_t length) {
 
 bool write_full(int sock, void *data, size_t length) {
     ssize_t bytes_written = 0;
-    while (bytes_written < length) {
+    while ((size_t)bytes_written < length) {
         ssize_t ret = write(sock, data + bytes_written, length - bytes_written);
         if (ret <= 0) {
             fprintf(stderr, "ERROR Could only send %lu bytes out of %lu\n", bytes_written, length);
@@ -669,7 +669,7 @@ int download_piece(int argc, char **argv, char *program) {
     BencodedValue *pieces = bencoded_dict_value((BencodedDict *)info->data, "pieces");
     if (!pieces || pieces->type != BYTES) goto end;
 
-    if (piece > pieces->size / SHA1_DIGEST_BYTE_LENGTH) {
+    if ((unsigned)piece > pieces->size / SHA1_DIGEST_BYTE_LENGTH) {
         fprintf(stderr, "Piece number out of range\n");
         ret = EX_USAGE;
         goto end;
@@ -724,7 +724,7 @@ int download_piece(int argc, char **argv, char *program) {
                         .length = htonl(BLOCK_SIZE)
                     };
                     packet_length = htonl(sizeof(payload) + 1);
-                    for (int idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
+                    for (size_t idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
                         payload.begin = htonl(idx * BLOCK_SIZE);
                         if (!write_full(sock, b(packet_length))) goto end;
                         if (!write_full(sock, b(type))) goto end;

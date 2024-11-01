@@ -246,7 +246,7 @@ BencodedValue *decode_bencoded_file(const char* fname) {
 
     uint8_t *data = (uint8_t *)malloc(fsize);
     size_t read_total = 0;
-    while (read_total < fsize) {
+    while (read_total < (unsigned)fsize) {
         size_t read_count = fread(data, 1, fsize, f);
         if (read_count == 0) goto end;
         read_total += read_count;
@@ -263,7 +263,7 @@ int print_bencoded_value(BencodedValue *value, BencodedPrintConfig config) {
         case UNKNOWN: return EX_DATAERR;
         case BYTES: {
             if (!config.noquotes) printf("\"");
-            for (int idx = 0; idx < value->size; idx ++) {
+            for (size_t idx = 0; idx < value->size; idx ++) {
                 if (!isprint(((char*)value->data)[idx])) {
                     printf("\\x%02x", ((unsigned char*)value->data)[idx]);
                 } else {
