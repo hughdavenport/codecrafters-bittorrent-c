@@ -611,10 +611,26 @@ bool read_full(int sock, void *data, size_t length) {
     ssize_t bytes_read = 0;
     while (bytes_read < length) {
         ssize_t read_ret = read(sock, data + bytes_read, length - bytes_read);
-        if (read_ret == 0) return false;
-        if (read_ret == -1) return false;
+        if (read_ret <= 0) {
+            fprintf(stderr, "ERROR Could only read %lu bytes out of %lu\n", bytes_read, length);
+            return false;
+        }
         bytes_read += read_ret;
-        printf("read %lu bytes out of %lu\n", bytes_read, length);
+        fprintf(stderr, "read %lu bytes out of %lu\n", bytes_read, length);
+    }
+    return true;
+}
+
+bool write_full(int sock, void *data, size_t length) {
+    ssize_t bytes_written = 0;
+    while (bytes_written < length) {
+        ssize_t ret = write(sock, data + bytes_written, length - bytes_written);
+        if (ret <= 0) {
+            fprintf(stderr, "ERROR Could only send %lu bytes out of %lu\n", bytes_written, length);
+            return false;
+        }
+        bytes_written += ret;
+        fprintf(stderr, "written %lu bytes out of %lu\n", bytes_written, length);
     }
     return true;
 }
@@ -649,6 +665,7 @@ int download_piece(int argc, char **argv, char *program) {
         goto end;
     }
 
+    // FIXME why not try all peers
     char peer[PEER_STRING_SIZE];
     int random_ret = random_peer(dict, info_hash, peer);
     if (random_ret != EX_OK) {
@@ -656,7 +673,6 @@ int download_piece(int argc, char **argv, char *program) {
         goto end;
     }
     fprintf(stderr, "Using peer %s\n", peer);
-    // FIXME else should we validate supplied peer is on tracker?
 
     ret = EX_USAGE;
     char *colon = index(peer, ':');
@@ -673,22 +689,27 @@ int download_piece(int argc, char **argv, char *program) {
     // FIXME multiprocess
 
     uint32_t packet_length = 0;
-    while (packet_length == 0) {
-        if (!read_full(sock, &packet_length, sizeof(packet_length))) goto end;
+    while (true) {
+#define b(var) &var, sizeof(var)
+        if (!read_full(sock, b(packet_length))) goto end;
         packet_length = ntohl(packet_length);
         fprintf(stderr, "packet length = %u\n", packet_length);
         if (packet_length > 0) {
             PeerMessageType type = CHOKE;
-            if (!read_full(sock, &type, sizeof(type))) goto end;
+            if (!read_full(sock, b(type))) goto end;
             switch (type) {
                 case BITFIELD: {
-                    fprintf(stderr, "UNIMPLEMENTED\n");
-                    ret = EX_SOFTWARE;
-                    goto end;
+                    uint8_t payload;
+                    if (!read_full(sock, b(payload))) goto end;
+                    packet_length = htonl(1);
+                    if (!write_full(sock, b(packet_length))) goto end;
+                    type = INTERESTED;
+                    if (!write_full(sock, b(type))) goto end;
+                    packet_length = 0;
                 }; break;
 
                 default:
-                    fprintf(stderr, "UNIMPLEMENTED type\n");
+                    fprintf(stderr, "%s:%d: UNIMPLEMENTED type %d\n", __FILE__, __LINE__, type);
                     ret = EX_SOFTWARE;
                     goto end;
             }
