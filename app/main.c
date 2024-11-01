@@ -17,6 +17,9 @@
 #define BENCODE_IMPLEMENTATION
 #include "bencode.h"
 
+#define HTTP_IMPLEMENTATION
+#include "http.h"
+
 #define s(str) str, strlen(str)
 
 // 20 byte identifier. This is random data
@@ -111,60 +114,82 @@ end:
     return ret;
 }
 
-int send_tracker_request(URL *url,
+bool add_query_string(URL *url,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
         size_t uploaded, size_t downloaded, size_t length) {
-    int sock = -1;
 
-    sock = connect_url(url);
-    if (sock == -1) return sock;
+    char *p = NULL;
+    size_t new_size = strlen("info_hash=") + SHA1_DIGEST_BYTE_LENGTH * 3 +
+            strlen("&peer_id=") + strlen(PEER_ID) +
+            strlen("&port=") + strlen("6881") +
+            strlen("&uploaded=") + strlen("&downloaded=") + strlen("&left=") +
+            strlen("&compact=1");
+#define BUF_SIZE 4096
+    char tmp[BUF_SIZE] = {0}; // Overkill
+    int ret = snprintf(tmp, BUF_SIZE - 1, "%lu%lu%lu", uploaded, downloaded, length);
+    if (ret <= 0) {
+        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+        return false;
+    }
+    new_size += ret;
 
-    dprintf(sock, "GET /");
-    if (url->path) dprintf(sock, "%s", url->path);
-    dprintf(sock, "?");
-    if (url->query) dprintf(sock, "%s&", url->query);
+    if (url->query) {
+        size_t query_string_len = strlen(url->query);
+        new_size += query_string_len + 1;
+        char *new_query = malloc(new_size + 1);
+        if (new_query == NULL) {
+            fprintf(stderr, "Could not allocate %ld bytes for query string\n", new_size + 1);
+            return false;
+        }
+        if (snprintf(new_query, query_string_len + 1, "%s&", url->query) != (int)query_string_len + 1) {
+            fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+            return false;
+        }
+        url->query = new_query; // Don't free original query, it is most likely part of a larger buffer from parse_url
+        p = url->query + query_string_len + 1; // Points at \0 at end of original query
+    } else {
+        url->query = malloc(new_size + 1);
+        if (url->query == NULL) {
+            fprintf(stderr, "Could not allocate %ld bytes for query string\n", new_size + 1);
+            return false;
+        }
+        p = url->query;
+    }
 
-    dprintf(sock, "info_hash=");
+    ret = snprintf(p, new_size, "info_hash=");
+    if (ret <= 0 || ret > (int)new_size) {
+        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+        return false;
+    }
+    p += ret; new_size -= ret;
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         if (!is_url_print(info_hash[idx])) {
-            dprintf(sock, "%%%02x", info_hash[idx]);
+            ret = snprintf(p, new_size, "%%%02x", info_hash[idx]);
+            if (ret <= 0 || ret > (int)new_size) {
+                fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+                return false;
+            }
+            p += ret; new_size -= ret;
         } else {
-            dprintf(sock, "%c", info_hash[idx]);
+            ret = snprintf(p, new_size, "%c", info_hash[idx]);
+            if (ret <= 0 || ret > (int)new_size) {
+                fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+                return false;
+            }
+            p += ret; new_size -= ret;
         }
     }
 
-    dprintf(sock, "&peer_id=%s", PEER_ID);
-    dprintf(sock, "&port=%d", 6881);
-    dprintf(sock, "&uploaded=%lu", uploaded);
-    dprintf(sock, "&downloaded=%lu", downloaded);
-    dprintf(sock, "&left=%lu", length);
-    dprintf(sock, "&compact=1");
-    dprintf(sock, " HTTP/1.0\r\n");
-
-    // FIXME: This should have port, but only if present
-    dprintf(sock, "Host: %s\r\n", url->host);
-    dprintf(sock, "User-Agent: %s\r\n", "I did this myself while coding a bittorrent client in C on codecrafters.io");
-    dprintf(sock, "Accept: */*\r\n");
-    dprintf(sock, "\r\n");
-
-    return sock;
-}
-
-char *read_line(char *start, char *end, char **ret) {
-    if (start >= end) return NULL;
-    char *p = start;
-    while (p < end && *p != '\r') p++;
-    if (p >= end) {
-        *ret = start;
-        return p;
+    ret = snprintf(p, new_size,
+            "&peer_id=%s&port=%d&uploaded=%lu&downloaded=%lu&left=%lu&compact=1",
+            PEER_ID, 6881, uploaded, downloaded, length);
+    if (ret <= 0 || ret > (int)new_size) {
+        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+        return false;
     }
-    if (p + 1 >= end || *(p + 1) != '\n') {
-        fprintf(stderr, "Expected \\n after \\r\n");
-        return NULL;
-    }
-    *p = 0;
-    *ret = start;
-    return p + 2 >= end ? p + 1 : p + 2;
+    p += ret; new_size -= ret;
+
+    return true;
 }
 
 void hexdump(uint8_t *buf, size_t len) {
@@ -203,82 +228,6 @@ void hexdump(uint8_t *buf, size_t len) {
     }
 }
 
-BencodedValue *read_tracker_response(int sock) {
-    BencodedValue *ret = NULL;
-#define BUF_SIZE 4096
-    char buf[BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
-    int len = read(sock, buf, BUF_SIZE);
-    char *p = buf;
-    char *line;
-    char *end = buf + len;
-
-    p = read_line(p, end, &line);
-    char *space = index(line, ' ');
-    if (space == NULL || strncmp(line, s("HTTP/")) != 0) {
-        fprintf(stderr, "Wrong protocol recieved: %s\n", line);
-        goto cleanup;
-    }
-    if (strncmp(line + strlen("HTTP/"), s("1.")) != 0) {
-        *space = 0;
-        fprintf(stderr, "Wrong HTTP version %s\n", (line + strlen("HTTP/")));
-        *space = ' ';
-        goto cleanup;
-    }
-    *space = 0;
-    if (strcmp(line + strlen("HTTP/1."), "0") != 0) {
-        fprintf(stderr, "Different HTTP minor version %s\n", (line + strlen("HTTP/")));
-    }
-    *space = ' ';
-
-    char *status = space + 1;
-    while (*status == ' ') status ++;
-    space = index(status, ' ');
-    if (space == NULL) {
-        fprintf(stderr, "Could not find status code: %s\n", line);
-        goto cleanup;
-    }
-    *space = 0;
-    if (strcmp(status, "200") != 0) {
-        fprintf(stderr, "Non-OK status %s\n", status);
-        *space = ' ';
-        goto cleanup;
-    }
-    *space = ' ';
-
-    long content_length = 0;
-    // FIXME: read more?
-    while ((p = read_line(p, end, &line))) {
-        if (*line == 0) {
-            break;
-        }
-        char *colon = index(line, ':');
-        *colon = 0;
-        if (strncasecmp(line, s("Content-Length")) == 0) {
-            content_length = atol(colon + 1);
-            fprintf(stderr, "Content-Length: %ld\n", content_length);
-        }
-        *colon = ':';
-    }
-
-    if (content_length == 0) {
-        fprintf(stderr, "Could not find Content-Length\n");
-        // FIXME select() to find out if more to read?
-    }
-
-    if (content_length > 0 && content_length + (p - buf) > len) {
-        fprintf(stderr, "Need to read %ld more bytes\n", content_length + (p - buf) - len);
-        goto cleanup;
-    }
-
-    ret = decode_bencoded_bytes((uint8_t *)p, (uint8_t *)end);
-
-cleanup:
-    // FIXME if buffers are alloc'd in future, clean them here maybe
-
-    return ret;
-}
-
-
 int peers_file(const char *fname) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
@@ -309,17 +258,22 @@ int peers_file(const char *fname) {
         goto end;
     }
 
+    if (!add_query_string(&url, info_hash, 0, 0, length->size)) {
+        goto end;
+    }
+
     ret = EX_UNAVAILABLE;
-    int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
-    if (sock == -1) goto end;
+    HttpResponse response = {0};
+    if (!send_http_request(&url, NULL, NULL, &response)) {
+        goto end;
+    }
 
     ret = EX_PROTOCOL;
-    BencodedValue *response = read_tracker_response(sock);
-    if (!response) goto end;
-    if (response->type != DICT) goto end;
-    dict = (BencodedDict *)response->data;
+    BencodedValue *decoded_response = decode_bencoded_bytes(response.body, response.body + response.content_length);
+    if (!decoded_response || decoded_response->type != DICT) goto end;
+    dict = (BencodedDict *)decoded_response->data;
     BencodedValue *peers = bencoded_dict_value(dict, "peers");
-    if (peers->type != BYTES) goto end;
+    if (!peers || peers->type != BYTES) goto end;
     if (peers->size % 6 != 0) goto end;
 
     for (size_t idx; (idx + 1) * 6 <= peers->size; idx ++) {
@@ -335,12 +289,12 @@ int peers_file(const char *fname) {
 
     ret = EX_OK;
 end:
-    if (sock != -1) close(sock);
     if (decoded) {
         free((void*)decoded->start);
         free_bencoded_value(decoded);
     }
-    if (response) free_bencoded_value(response); // No memory allocated here (all on stack with buf)
+    if (decoded_response) free_bencoded_value(decoded_response);
+    free_http_response(&response);
     if (errno) ret = errno;
     return ret;
 }
@@ -406,15 +360,21 @@ int random_peer(BencodedDict *dict,
     }
 
     ret = EX_UNAVAILABLE;
-    int sock = send_tracker_request(&url, info_hash, 0, 0, length->size);
-    if (sock == -1) goto end;
-    errno = 0; // networks can be weird, but we got a valid sock now?
+    if (!add_query_string(&url, info_hash, 0, 0, length->size)) {
+        goto end;
+    }
+
+    ret = EX_UNAVAILABLE;
+    HttpResponse response = {0};
+    if (!send_http_request(&url, NULL, NULL, &response)) {
+        goto end;
+    }
 
     ret = EX_PROTOCOL;
-    BencodedValue *response = read_tracker_response(sock);
-    if (!response) goto end;
-    if (response->type != DICT) goto end;
-    dict = (BencodedDict *)response->data;
+    BencodedValue *decoded = decode_bencoded_bytes(response.body, response.body + response.content_length);
+    if (!decoded) goto end;
+    if (decoded->type != DICT) goto end;
+    dict = (BencodedDict *)decoded->data;
     BencodedValue *peers = bencoded_dict_value(dict, "peers");
     if (peers->type != BYTES) goto end;
     if (peers->size % 6 != 0) goto end;
@@ -437,8 +397,8 @@ int random_peer(BencodedDict *dict,
     printf("got to end, peer = %s, ret = %d\n", peer, ret);
 
 end:
-    if (sock != -1) close(sock);
-    if (response) free_bencoded_value(response); // No memory allocated here (all on stack with buf)
+    if (decoded) free_bencoded_value(decoded);
+    free_http_response(&response);
     if (errno) ret = errno;
     return ret;
 }

@@ -127,42 +127,6 @@ char *read_line(char *start, char *end, char **ret) {
     return p + 2 >= end ? p + 1 : p + 2;
 }
 
-void hexdump(uint8_t *buf, size_t len) {
-    for (size_t idx = 0; idx < len; ) {
-        if (idx % 16 == 0) printf("%08lx:", idx);
-        if (idx % 2 == 0) printf(" ");
-        printf("%02x", (uint8_t)buf[idx]);
-        idx ++;
-        if (idx % 16 == 0) {
-            printf("  ");
-            for (size_t i = 16 * ((idx / 16) - 1); i < idx; i++) {
-                if (isprint(buf[i])) {
-                    printf("%c", buf[i]);
-                } else {
-                    printf(".");
-                }
-            }
-            printf("\n");
-            continue;
-        }
-    }
-    if (len % 16 != 0) {
-        for (size_t idx = len % 16; idx < 16; idx ++) {
-            if (idx % 2 == 0) printf(" ");
-            printf("  ");
-        }
-        printf("  ");
-        for (size_t i = 16 * (len / 16); i < len; i ++) {
-            if (isprint(buf[i])) {
-                printf("%c", buf[i]);
-            } else {
-                printf(".");
-            }
-        }
-        printf("\n");
-    }
-}
-
 void _send_http_request(int sock, URL *url, HttpUserAgent *agent, HttpHeaders *headers) {
     dprintf(sock, "GET /");
     if (url->path) dprintf(sock, "%s", url->path);
@@ -265,9 +229,9 @@ void _send_http_request(int sock, URL *url, HttpUserAgent *agent, HttpHeaders *h
 bool _read_http_response(int sock, HttpResponse *response) {
     if (response == NULL) return false;
     bool ret = false;
-#define BUF_SIZE 4096
-    uint8_t buf[BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
-    int len = read(sock, buf, BUF_SIZE);
+#define HTTP_BUF_SIZE 4096
+    uint8_t buf[HTTP_BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
+    int len = read(sock, buf, HTTP_BUF_SIZE);
     if (len <= 0) {
         fprintf(stderr, "Could not read from socket\n");
         return false;
@@ -284,12 +248,11 @@ bool _read_http_response(int sock, HttpResponse *response) {
 
     p = read_line(p, end, &line);
     char *space = index(line, ' ');
-#define s(str) (str), strlen(str)
-    if (space == NULL || strncmp(line, s("HTTP/")) != 0) {
+    if (space == NULL || strncmp(line, "HTTP/", strlen("HTTP/")) != 0) {
         fprintf(stderr, "Wrong protocol recieved: %s\n", line);
         goto cleanup;
     }
-    if (strncmp(line + strlen("HTTP/"), s("1.")) != 0) {
+    if (strncmp(line + strlen("HTTP/"), "1.", strlen("1.") != 0)) {
         *space = 0;
         fprintf(stderr, "Wrong HTTP version %s\n", (line + strlen("HTTP/")));
         *space = ' ';
@@ -331,7 +294,7 @@ bool _read_http_response(int sock, HttpResponse *response) {
         }
         char *colon = index(line, ':');
         *colon = 0;
-        if (strncasecmp(line, s("Content-Length")) == 0) {
+        if (strncasecmp(line, "Content-Length", strlen("Content-Length")) == 0) {
             response->content_length = atol(colon + 1);
             fprintf(stderr, "Content-Length: %ld\n", response->content_length);
         }
