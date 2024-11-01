@@ -41,8 +41,8 @@ typedef enum {
 
 typedef struct {
     BencodedType type;
-    const char *start;
-    const char *end;
+    const uint8_t *start;
+    const uint8_t *end;
     size_t size;
     void *data;
 } BencodedValue;
@@ -65,7 +65,7 @@ typedef struct {
 
 void free_bencoded_value(BencodedValue *value);
 
-BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_t*end);
+BencodedValue *decode_bencoded_bytes(const uint8_t *bencoded_value, const uint8_t *end);
 BencodedValue *decode_bencoded_file(const char* fname);
 
 int print_bencoded_value(BencodedValue *value, BencodedPrintConfig config);
@@ -115,13 +115,13 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
     switch (first) {
         case '0' ... '9': {
             // FIXME use strtol to detect errors
-            int length = atoi(bencoded_value);
-            const char* colon_index = strchr(bencoded_value, ':');
+            int length = atoi((char *)bencoded_value);
+            const char* colon_index = strchr((char *)bencoded_value, ':');
             if (colon_index == NULL) {
                 fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
                 return NULL;
             }
-            const unsigned char* start = colon_index + 1;
+            const uint8_t* start = (uint8_t *)colon_index + 1;
             void *data = malloc(length);
             if (!data) return NULL;
             memcpy(data, start, length);
@@ -244,7 +244,7 @@ BencodedValue *decode_bencoded_file(const char* fname) {
     if (fsize < 0) goto end;
     if (fseek(f, 0, SEEK_SET) != 0) goto end;
 
-    char *data = (char *)malloc(fsize);
+    uint8_t *data = (uint8_t *)malloc(fsize);
     size_t read_total = 0;
     while (read_total < fsize) {
         size_t read_count = fread(data, 1, fsize, f);

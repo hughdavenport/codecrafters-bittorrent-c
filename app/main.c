@@ -234,7 +234,7 @@ BencodedValue *read_tracker_response(int sock) {
         goto cleanup;
     }
 
-    ret = decode_bencoded_bytes(p, end);
+    ret = decode_bencoded_bytes((uint8_t *)p, (uint8_t *)end);
 
 cleanup:
     // FIXME if buffers are alloc'd in future, clean them here maybe
@@ -329,7 +329,7 @@ int hash_file(const char *fname) {
     int ret = EX_DATAERR;
 
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    sha1_digest(data, fsize, info_hash);
+    sha1_digest((uint8_t *)data, fsize, info_hash);
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         printf("%02x", info_hash[idx]);
     }
@@ -409,8 +409,6 @@ int connect_peer(const char *host, const char *port) {
     struct addrinfo hints = {0};
     struct addrinfo *result, *rp = NULL;
     int ret = -1;
-    size_t len;
-    ssize_t nread;
 
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -485,7 +483,7 @@ int handshake_peer(const char *host,
     if (len != HANDSHAKE_SIZE) goto error;
 
     if (response[0] != strlen(HANDSHAKE_PROTOCOL)) goto error;
-    if (strncmp(response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto error;
+    if (strncmp((char *)response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto error;
     uint8_t *reserved = response + response[0] + 1;
     for (int idx = 0; idx < RESERVED_SIZE; idx ++) {
         if (reserved[idx] != 0) {
@@ -800,7 +798,7 @@ int main(int argc, char* argv[]) {
 
     if (strcmp(command, "decode") == 0) {
         const char *encoded_str = argv[2];
-        BencodedValue *value = decode_bencoded_bytes(encoded_str, encoded_str + strlen(encoded_str));
+        BencodedValue *value = decode_bencoded_bytes((uint8_t *)encoded_str, (uint8_t *)encoded_str + strlen(encoded_str));
         if (!value) return EX_DATAERR;
         print_bencoded_value(value, (BencodedPrintConfig) {0});
         printf("\n");
