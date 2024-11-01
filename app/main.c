@@ -26,6 +26,9 @@
 #define HANDSHAKE_SIZE 68
 #define RESERVED_SIZE 8
 
+// 2^14 (16 kiB)
+#define BLOCK_SIZE 16384
+
 typedef enum:uint8_t {
     CHOKE,
     UNCHOKE,
@@ -37,6 +40,12 @@ typedef enum:uint8_t {
     PIECE,
     CANCEL
 } PeerMessageType;
+
+typedef struct {
+    uint32_t index;
+    uint32_t begin;
+    uint32_t length;
+} RequestPayload;
 
 int info_file(const char *fname) {
     int ret = EX_DATAERR;
@@ -643,20 +652,30 @@ int download_piece(int argc, char **argv, char *program) {
     if (!parse_download_piece(argc, argv, program, &fname, &output, &piece)) {
         return EX_USAGE;
     }
+    if (piece < 0) return EX_USAGE;
 
     FILE *out = output ? fopen(output, "w") : stdout;
     if (out == NULL) return EX_CANTCREAT;
 
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
+    if (!decoded || decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
+
     BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
+    if (!info || info->type != DICT) goto end;
     BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
     if (!length || length->type != INTEGER) goto end;
+    BencodedValue *piece_length = bencoded_dict_value((BencodedDict *)info->data, "piece length");
+    if (!piece_length || piece_length->type != INTEGER) goto end;
+    BencodedValue *pieces = bencoded_dict_value((BencodedDict *)info->data, "pieces");
+    if (!pieces || pieces->type != BYTES) goto end;
+
+    if (piece > pieces->size / SHA1_DIGEST_BYTE_LENGTH) {
+        fprintf(stderr, "Piece number out of range\n");
+        ret = EX_USAGE;
+        goto end;
+    }
 
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
@@ -698,6 +717,33 @@ int download_piece(int argc, char **argv, char *program) {
             PeerMessageType type = CHOKE;
             if (!read_full(sock, b(type))) goto end;
             switch (type) {
+                case UNCHOKE: {
+                    // FIXME multiprocess
+                    type = REQUEST;
+                    RequestPayload payload = {
+                        .index = htonl(piece),
+                        .begin = 0,
+                        .length = htonl(BLOCK_SIZE)
+                    };
+                    packet_length = htonl(sizeof(payload) + 1);
+                    for (int idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
+                        payload.begin = htonl(idx * BLOCK_SIZE);
+                        if (!write_full(sock, b(packet_length))) goto end;
+                        if (!write_full(sock, b(type))) goto end;
+                        if (!write_full(sock, b(payload))) goto end;
+                    }
+                    payload.length = piece_length->size % BLOCK_SIZE;
+                    if (payload.length != 0) {
+                        packet_length = htonl(payload.length);
+                        payload.begin = htonl(BLOCK_SIZE * (piece_length->size / BLOCK_SIZE));
+                        if (!write_full(sock, b(packet_length))) goto end;
+                        if (!write_full(sock, b(type))) goto end;
+                        if (!write_full(sock, b(payload))) goto end;
+                    }
+
+                    packet_length = 0;
+                }; break;
+
                 case BITFIELD: {
                     uint8_t payload;
                     if (!read_full(sock, b(payload))) goto end;
@@ -705,8 +751,10 @@ int download_piece(int argc, char **argv, char *program) {
                     if (!write_full(sock, b(packet_length))) goto end;
                     type = INTERESTED;
                     if (!write_full(sock, b(type))) goto end;
+
                     packet_length = 0;
                 }; break;
+
 
                 default:
                     fprintf(stderr, "%s:%d: UNIMPLEMENTED type %d\n", __FILE__, __LINE__, type);
