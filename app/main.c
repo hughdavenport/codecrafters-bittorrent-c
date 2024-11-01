@@ -20,6 +20,8 @@
 #define HTTP_IMPLEMENTATION
 #include "http.h"
 
+int decode(int argc, char **argv);
+
 #define s(str) str, strlen(str)
 
 // 20 byte identifier. This is random data
@@ -192,42 +194,6 @@ bool add_query_string(URL *url,
     return true;
 }
 
-void hexdump(uint8_t *buf, size_t len) {
-    for (size_t idx = 0; idx < len; ) {
-        if (idx % 16 == 0) printf("%08lx:", idx);
-        if (idx % 2 == 0) printf(" ");
-        printf("%02x", (uint8_t)buf[idx]);
-        idx ++;
-        if (idx % 16 == 0) {
-            printf("  ");
-            for (size_t i = 16 * ((idx / 16) - 1); i < idx; i++) {
-                if (isprint(buf[i])) {
-                    printf("%c", buf[i]);
-                } else {
-                    printf(".");
-                }
-            }
-            printf("\n");
-            continue;
-        }
-    }
-    if (len % 16 != 0) {
-        for (size_t idx = len % 16; idx < 16; idx ++) {
-            if (idx % 2 == 0) printf(" ");
-            printf("  ");
-        }
-        printf("  ");
-        for (size_t i = 16 * (len / 16); i < len; i ++) {
-            if (isprint(buf[i])) {
-                printf("%c", buf[i]);
-            } else {
-                printf(".");
-            }
-        }
-        printf("\n");
-    }
-}
-
 int peers_file(const char *fname) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname);
@@ -394,12 +360,10 @@ int random_peer(BencodedDict *dict,
     } else {
         ret = EX_OK;
     }
-    printf("got to end, peer = %s, ret = %d\n", peer, ret);
 
 end:
     if (decoded) free_bencoded_value(decoded);
     free_http_response(&response);
-    if (errno) ret = errno;
     return ret;
 }
 
@@ -795,13 +759,7 @@ int main(int argc, char* argv[]) {
     const char* command = argv[1];
 
     if (strcmp(command, "decode") == 0) {
-        const char *encoded_str = argv[2];
-        BencodedValue *value = decode_bencoded_bytes((uint8_t *)encoded_str, (uint8_t *)encoded_str + strlen(encoded_str));
-        if (!value) return EX_DATAERR;
-        print_bencoded_value(value, (BencodedPrintConfig) {0});
-        printf("\n");
-        free_bencoded_value(value);
-        return EX_OK;
+        return decode(argc - 2, argv + 2);
     } else if (strcmp(command, "info") == 0) {
         const char *fname = argv[2];
         return info_file(fname);

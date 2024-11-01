@@ -381,7 +381,7 @@ bool _add_http_headers(HttpHeaders *headers, void *start, ...) {
 
     if (headers->size + num_headers >= headers->capacity) {
         size_t new_capacity = 2 * (headers->capacity + num_headers);
-        HttpHeader *data = reallocarray(headers->data, new_capacity, sizeof(HttpHeader));
+        HttpHeader *data = realloc(headers->data, new_capacity * sizeof(HttpHeader));
         if (data == NULL) {
             // old data is untouched
             return false;
