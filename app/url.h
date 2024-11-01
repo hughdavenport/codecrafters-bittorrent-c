@@ -282,4 +282,5 @@ int connect_url(URL *url) {
     return ret; // Either -1, or a file descriptor of a connected socket
 }
 
-#endif
+#endif // URL_IMPLEMENTATION
+
