@@ -68,7 +68,7 @@ int handshake_file(const char *fname, const char *peer) {
 end:
     if (sock != -1) close(sock);
     if (decoded) {
-        free((void*)decoded->start);
+        free((void*)decoded->start); // Memory from decode_bencoded_file
         free_bencoded_value(decoded);
     }
     return ret;

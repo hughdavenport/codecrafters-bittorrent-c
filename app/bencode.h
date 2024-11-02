@@ -92,6 +92,7 @@ void free_bencoded_list(BencodedList *list) {
     if (!list) return;
     free_bencoded_value(list->value);
     free_bencoded_list(list->next);
+    free(list);
 }
 
 void free_bencoded_dict(BencodedDict *dict) {
@@ -99,6 +100,7 @@ void free_bencoded_dict(BencodedDict *dict) {
     free_bencoded_value(dict->key);
     free_bencoded_value(dict->value);
     free_bencoded_dict(dict->next);
+    free(dict);
 }
 
 void free_bencoded_value(BencodedValue *value) {
@@ -139,7 +141,10 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             if (!data) return NULL;
             memcpy(data, start, length);
             BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-            if (ret == NULL) return NULL;
+            if (ret == NULL) {
+                free(data);
+                return NULL;
+            }
             ret->type = BYTES;
             ret->start = bencoded_value;
             ret->end = start + length;
@@ -179,12 +184,18 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             while (str < end && *str != 'e') {
                 size ++;
                 l->value = decode_bencoded_bytes(str, end);
-                if (!l->value || l->value->type == UNKNOWN) return NULL;
+                if (!l->value || l->value->type == UNKNOWN) {
+                    free_bencoded_list(data);
+                    free(data);
+                    return NULL;
+                }
                 str = l->value->end;
                 if (str && *str != 'e') {
                     l->next = calloc(1, sizeof(BencodedList));
                     if (!l->next) {
                         fprintf(stderr, "Out of memory\n");
+                        free_bencoded_list(data);
+                        free(data);
                         return NULL;
                     }
                     l = l->next;
@@ -192,7 +203,11 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             }
             // FIXME assert missing e?
             BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-            if (ret == NULL) return ret;
+            if (ret == NULL) {
+                free_bencoded_list(data);
+                free(data);
+                return ret;
+            }
             ret->type = LIST;
             ret->start = bencoded_value;
             ret->end = str + 1;
@@ -214,17 +229,27 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
                 size ++;
 
                 d->key = decode_bencoded_bytes(str, end);
-                if (!d->key || d->key->type != BYTES) return NULL;
+                if (!d->key || d->key->type != BYTES) {
+                    free_bencoded_dict(data);
+                    free(data);
+                    return NULL;
+                }
                 str = d->key->end;
 
                 d->value = decode_bencoded_bytes(str, end);
-                if (!d->value || d->value->type == UNKNOWN) return NULL;
+                if (!d->value || d->value->type == UNKNOWN) {
+                    free_bencoded_dict(data);
+                    free(data);
+                    return NULL;
+                }
                 str = d->value->end;
 
                 if (str < end && *str != 'e') {
                     d->next = calloc(1, sizeof(BencodedDict));
                     if (!d->next) {
                         fprintf(stderr, "Out of memory\n");
+                        free_bencoded_dict(data);
+                        free(data);
                         return NULL;
                     }
                     d = d->next;
@@ -232,7 +257,11 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             }
             // FIXME assert missing e?
             BencodedValue *ret = calloc(1, sizeof(BencodedValue));
-            if (ret == NULL) return ret;
+            if (ret == NULL) {
+                free_bencoded_dict(data);
+                free(data);
+                return NULL;
+            }
             ret->type = DICT;
             ret->start = bencoded_value;
             ret->end = str + 1;
@@ -243,7 +272,7 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
 
     }
 
-    fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+    fprintf(stderr, "Invalid bencoded data\n");
     return NULL;
 }
 
