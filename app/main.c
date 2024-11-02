@@ -20,17 +20,15 @@
 #define HTTP_IMPLEMENTATION
 #include "http.h"
 
+#define PEERS_IMPLEMENTATION
+#include "peers.h"
+
 int decode(int argc, char **argv);
 int info(int argc, char **argv);
-
-#define s(str) str, strlen(str)
-
-// 20 byte identifier. This is random data
-#define PEER_ID "AdtLtU86udGzzN5m9GDs"
-#define PEER_ID_SIZE 20
-#define HANDSHAKE_PROTOCOL "BitTorrent protocol"
-#define HANDSHAKE_SIZE 68
-#define RESERVED_SIZE 8
+int peers(int argc, char **argv);
+int hash(int argc, char **argv);
+int handshake(int argc, char **argv);
+int parse(int argc, char **argv);
 
 // 2^14 (16 kiB)
 #define BLOCK_SIZE 16384
@@ -52,406 +50,6 @@ typedef struct {
     uint32_t begin;
     uint32_t length;
 } RequestPayload;
-
-bool add_query_string(URL *url,
-        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        size_t uploaded, size_t downloaded, size_t length) {
-
-    char *p = NULL;
-    size_t new_size = strlen("info_hash=") + SHA1_DIGEST_BYTE_LENGTH * 3 +
-            strlen("&peer_id=") + strlen(PEER_ID) +
-            strlen("&port=") + strlen("6881") +
-            strlen("&uploaded=") + strlen("&downloaded=") + strlen("&left=") +
-            strlen("&compact=1");
-#define BUF_SIZE 4096
-    char tmp[BUF_SIZE] = {0}; // Overkill
-    int ret = snprintf(tmp, BUF_SIZE - 1, "%lu%lu%lu", uploaded, downloaded, length);
-    if (ret <= 0) {
-        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-        return false;
-    }
-    new_size += ret;
-
-    if (url->query) {
-        size_t query_string_len = strlen(url->query);
-        new_size += query_string_len + 1;
-        char *new_query = malloc(new_size + 1);
-        if (new_query == NULL) {
-            fprintf(stderr, "Could not allocate %ld bytes for query string\n", new_size + 1);
-            return false;
-        }
-        if (snprintf(new_query, query_string_len + 1, "%s&", url->query) != (int)query_string_len + 1) {
-            fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-            return false;
-        }
-        url->query = new_query; // Don't free original query, it is most likely part of a larger buffer from parse_url
-        p = url->query + query_string_len + 1; // Points at \0 at end of original query
-    } else {
-        url->query = malloc(new_size + 1);
-        if (url->query == NULL) {
-            fprintf(stderr, "Could not allocate %ld bytes for query string\n", new_size + 1);
-            return false;
-        }
-        p = url->query;
-    }
-
-    ret = snprintf(p, new_size, "info_hash=");
-    if (ret <= 0 || ret > (int)new_size) {
-        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-        return false;
-    }
-    p += ret; new_size -= ret;
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        if (!is_url_print(info_hash[idx])) {
-            ret = snprintf(p, new_size, "%%%02x", info_hash[idx]);
-            if (ret <= 0 || ret > (int)new_size) {
-                fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-                return false;
-            }
-            p += ret; new_size -= ret;
-        } else {
-            ret = snprintf(p, new_size, "%c", info_hash[idx]);
-            if (ret <= 0 || ret > (int)new_size) {
-                fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-                return false;
-            }
-            p += ret; new_size -= ret;
-        }
-    }
-
-    ret = snprintf(p, new_size,
-            "&peer_id=%s&port=%d&uploaded=%lu&downloaded=%lu&left=%lu&compact=1",
-            PEER_ID, 6881, uploaded, downloaded, length);
-    if (ret <= 0 || ret > (int)new_size) {
-        fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
-        return false;
-    }
-    p += ret; new_size -= ret;
-
-    return true;
-}
-
-int peers_file(const char *fname) {
-    int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
-    BencodedDict *dict = (BencodedDict *)decoded->data;
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
-
-    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    if (!sha1_digest((const uint8_t*)info->start,
-                    (info->end - info->start),
-                    info_hash)) {;
-        goto end;
-    }
-
-    BencodedValue *announce = bencoded_dict_value(dict, "announce");
-    if (!announce) goto end;
-    if (announce->type != BYTES) goto end;
-
-    URL url = {0};
-    if (!parse_url((char *)announce->data,
-                (char *)announce->data + announce->size,
-                &url)) {
-        goto end;
-    }
-
-    if (!add_query_string(&url, info_hash, 0, 0, length->size)) {
-        goto end;
-    }
-
-    ret = EX_UNAVAILABLE;
-    HttpResponse response = {0};
-    if (!send_http_request(&url, NULL, NULL, &response)) {
-        goto end;
-    }
-
-    if (response.status_code != 200) {
-        fprintf(stderr, "Non 200 status code: %d\n", response.status_code);
-        goto end;
-    }
-
-    ret = EX_PROTOCOL;
-    BencodedValue *decoded_response = decode_bencoded_bytes(response.body, response.body + response.content_length);
-    if (!decoded_response || decoded_response->type != DICT) goto end;
-    dict = (BencodedDict *)decoded_response->data;
-    BencodedValue *peers = bencoded_dict_value(dict, "peers");
-    if (!peers || peers->type != BYTES) goto end;
-    if (peers->size % 6 != 0) goto end;
-
-    for (size_t idx = 0; (idx + 1) * 6 <= peers->size; idx ++) {
-        printf("%d.%d.%d.%d",
-                ((uint8_t *)peers->data)[6 * idx + 0],
-                ((uint8_t *)peers->data)[6 * idx + 1],
-                ((uint8_t *)peers->data)[6 * idx + 2],
-                ((uint8_t *)peers->data)[6 * idx + 3]);
-        printf(":%d\n",
-                256 * ((uint8_t *)peers->data)[6 * idx + 4] +
-                ((uint8_t *)peers->data)[6 * idx + 5]);
-    }
-
-    ret = EX_OK;
-end:
-    if (decoded) {
-        free((void*)decoded->start);
-        free_bencoded_value(decoded);
-    }
-    if (decoded_response) free_bencoded_value(decoded_response);
-    free_http_response(&response);
-    if (errno) ret = errno;
-    return ret;
-}
-
-int hash_file(const char *fname) {
-    FILE *f = fopen(fname, "rb");
-    if (f == NULL) return EX_NOINPUT;
-
-    if (fseek(f, 0, SEEK_END) != 0) goto end;
-    long fsize = ftell(f);
-    if (fsize < 0) goto end;
-    if (fseek(f, 0, SEEK_SET) != 0) goto end;
-
-    char *data = (char *)malloc(fsize);
-    size_t read_total = 0;
-    while (read_total < (unsigned)fsize) {
-        size_t read_count = fread(data, 1, fsize, f);
-        if (read_count == 0) goto end;
-        read_total += read_count;
-    }
-
-    int ret = EX_DATAERR;
-
-    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    sha1_digest((uint8_t *)data, fsize, info_hash);
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        printf("%02x", info_hash[idx]);
-    }
-    printf("\n");
-
-    ret = EX_OK;
-end:
-    if (errno) {
-        int ret = errno;
-        if (f) fclose(f);
-        return ret;
-    }
-    if (f) if (!fclose(f)) return errno;
-    return ret;
-}
-
-// Enough space for xxx.xxx.xxx.xxx:xxxxx\0
-#define PEER_STRING_SIZE 23
-int random_peer(BencodedDict *dict,
-        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        char peer[PEER_STRING_SIZE]) {
-    int ret = EX_DATAERR;
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
-
-    BencodedValue *announce = bencoded_dict_value(dict, "announce");
-    if (!announce) goto end;
-    if (announce->type != BYTES) goto end;
-
-    URL url = {0};
-    if (!parse_url((char *)announce->data,
-                (char *)announce->data + announce->size,
-                &url)) {
-        goto end;
-    }
-
-    ret = EX_UNAVAILABLE;
-    if (!add_query_string(&url, info_hash, 0, 0, length->size)) {
-        goto end;
-    }
-
-    ret = EX_UNAVAILABLE;
-    HttpResponse response = {0};
-    if (!send_http_request(&url, NULL, NULL, &response)) {
-        goto end;
-    }
-
-    if (response.status_code != 200) {
-        fprintf(stderr, "Non 200 status code: %d\n", response.status_code);
-        goto end;
-    }
-
-    ret = EX_PROTOCOL;
-    BencodedValue *decoded = decode_bencoded_bytes(response.body, response.body + response.content_length);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
-    dict = (BencodedDict *)decoded->data;
-    BencodedValue *peers = bencoded_dict_value(dict, "peers");
-    if (peers->type != BYTES) goto end;
-    if (peers->size % 6 != 0) goto end;
-
-    srand(time(NULL));
-    int idx = random() % (peers->size / 6);
-    if (snprintf(peer, PEER_STRING_SIZE, "%d.%d.%d.%d:%d",
-            ((uint8_t *)peers->data)[6 * idx + 0],
-            ((uint8_t *)peers->data)[6 * idx + 1],
-            ((uint8_t *)peers->data)[6 * idx + 2],
-            ((uint8_t *)peers->data)[6 * idx + 3],
-            256 * ((uint8_t *)peers->data)[6 * idx + 4] +
-            ((uint8_t *)peers->data)[6 * idx + 5]) > PEER_STRING_SIZE) {
-        // FIXME This may signify IPv6
-        fprintf(stderr, "%s:%d: UNREACHABLE", __FILE__, __LINE__);
-        ret = EX_SOFTWARE;
-    } else {
-        ret = EX_OK;
-    }
-
-end:
-    if (decoded) free_bencoded_value(decoded);
-    free_http_response(&response);
-    return ret;
-}
-
-int connect_peer(const char *host, const char *port) {
-    struct addrinfo hints = {0};
-    struct addrinfo *result, *rp = NULL;
-    int ret = -1;
-
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;
-
-    ret = getaddrinfo(host, port, &hints, &result);
-    if (ret != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
-        return ret;
-    }
-
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-        ret = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (ret == -1)
-            continue;
-
-        if (connect(ret, rp->ai_addr, rp->ai_addrlen) == 0)
-            break; // Success
-
-        close(ret);
-        ret = -1;
-    }
-
-    freeaddrinfo(result);
-
-    return ret; // Either -1, or a file descriptor of a connected socket
-}
-
-int handshake_peer(const char *host,
-        const char *port,
-        const uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        uint8_t response[HANDSHAKE_SIZE]) {
-    int sock = connect_peer(host, port);
-    if (sock == -1) return -1;
-
-    int len = 0;
-    len += dprintf(sock, "%c", (char)strlen(HANDSHAKE_PROTOCOL));
-    len += dprintf(sock, HANDSHAKE_PROTOCOL);
-    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
-    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        len += dprintf(sock, "%c", info_hash[idx]);
-    }
-    len += dprintf(sock, "%s", PEER_ID);
-    fprintf(stderr, "wrote %d bytes.\n", len);
-    if (len != HANDSHAKE_SIZE) goto error;
-
-    len = read(sock, response, HANDSHAKE_SIZE);
-    fprintf(stderr, "read %d bytes.\n", len);
-    if (len != HANDSHAKE_SIZE) goto error;
-
-    if (response[0] != strlen(HANDSHAKE_PROTOCOL)) goto error;
-    if (strncmp((char *)response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto error;
-    uint8_t *reserved = response + response[0] + 1;
-    for (int idx = 0; idx < RESERVED_SIZE; idx ++) {
-        if (reserved[idx] != 0) {
-            fprintf(stderr, "WARN: reserved[%d] = 0x%02x\n", idx, reserved[idx]);
-        }
-    }
-    // FIXME: work out what reserved bits mean what extension
-    if (memcmp(reserved + RESERVED_SIZE, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
-        fprintf(stderr, "Recieved invalid hash\n");
-        goto error;
-    }
-
-    return sock;
-
-error:
-    return -2;
-}
-
-int handshake(const char *fname, const char *peer) {
-    int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
-    BencodedDict *dict = (BencodedDict *)decoded->data;
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
-
-    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    if (!sha1_digest((const uint8_t*)info->start,
-                    (info->end - info->start),
-                    info_hash)) {;
-        goto end;
-    }
-
-    if (peer == NULL) {
-        // pick a random one, useful for testing
-        char temp[PEER_STRING_SIZE];
-        int random_ret = random_peer(dict, info_hash, temp);
-        if (random_ret != EX_OK) {
-            ret = random_ret;
-            goto end;
-        }
-        peer = temp;
-    }
-    fprintf(stderr, "Using peer %s\n", peer);
-    // FIXME else should we validate supplied peer is on tracker?
-
-    ret = EX_USAGE;
-    char *colon = index(peer, ':');
-    if (colon == NULL) goto end;
-    *colon = 0;
-    ret = EX_UNAVAILABLE;
-    uint8_t response[HANDSHAKE_SIZE];
-    int sock = handshake_peer(peer, colon + 1, info_hash, response);
-    *colon = ':';
-    if (sock == -1) goto end;
-    if (sock < 0) {
-        ret = EX_PROTOCOL;
-        goto end;
-    }
-    uint8_t *peer_id = response + response[0] + 1 + RESERVED_SIZE + SHA1_DIGEST_BYTE_LENGTH;
-    printf("Peer ID: ");
-    for (int idx = 0; idx < PEER_ID_SIZE; idx ++) {
-        printf("%02x", peer_id[idx]);
-    }
-    printf("\n");
-
-    ret = EX_OK;
-end:
-    if (sock != -1) close(sock);
-    if (decoded) {
-        free((void*)decoded->start);
-        free_bencoded_value(decoded);
-    }
-    if (errno) ret = errno;
-    return ret;
-}
 
 bool parse_download_piece(int argc,  char **argv,  char *program,
          char **fname,  char **output, long *piece) {
@@ -572,9 +170,8 @@ int download_piece(int argc, char **argv, char *program) {
 
     // FIXME why not try all peers
     char peer[PEER_STRING_SIZE];
-    int random_ret = random_peer(dict, info_hash, peer);
-    if (random_ret != EX_OK) {
-        ret = random_ret;
+    ret = EX_UNAVAILABLE;
+    if (!random_peer(dict, info_hash, peer)) {
         goto end;
     }
     fprintf(stderr, "Using peer %s\n", peer);
@@ -710,31 +307,15 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(command, "info") == 0) {
         return info(argc - 2, argv + 2);
     } else if (strcmp(command, "peers") == 0) {
-        const char *fname = argv[2];
-        return peers_file(fname);
+        return peers(argc - 2, argv + 2);
     } else if (strcmp(command, "handshake") == 0) {
-        const char *fname = argv[2];
-        const char *peer = NULL;
-        if (argc >= 3) peer = argv[3];
-        return handshake(fname, peer);
+        return handshake(argc - 2, argv + 2);
     } else if (strcmp(command, "download_piece") == 0) {
         return download_piece(argc - 2, argv + 2, argv[0]);
     } else if (strcmp(command, "parse") == 0) {
-        int ret = EX_OK;
-        URL url = {0};
-        if (!parse_url(argv[2], NULL, &url)) ret = EX_DATAERR;
-        printf("scheme = %s\n", url.scheme);
-        printf("user = %s\n", url.user);
-        printf("pass = %s\n", url.pass);
-        printf("host = %s\n", url.host);
-        printf("port = %s (%d)\n", url.port, url.port_num);
-        printf("path = %s\n", url.path);
-        printf("query = %s\n", url.query);
-        printf("fragment = %s\n", url.fragment);
-        return ret;
+        return parse(argc - 2, argv + 2);
     } else if (strcmp(command, "hash") == 0) {
-        const char *fname = argv[2];
-        return hash_file(fname);
+        return hash(argc - 2, argv + 2);
     } else {
         fprintf(stderr, "Unknown command: %s\n", command);
         return EX_USAGE;

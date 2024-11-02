@@ -44,11 +44,11 @@ SOFTWARE.
     TOSTRING(DEPENDS_URL_H_VERSION_PATCH)
 
 #if !defined(URL_H) || !defined(URL_H_VERSION_MAJOR) || !defined(URL_H_VERSION_MINOR) || !defined(URL_H_VERSION_PATCH)
-#error "Depends on url.h. You can download this from https://github.com/hughdavenport.url.h"
+#error "Depends on url.h. You can download this from https://github.com/hughdavenport/url.h"
 #elif URL_H_VERSION_MAJOR < DEPENDS_URL_H_MAJOR || \
     (URL_H_VERSION_MAJOR == DEPENDS_URL_H_MAJOR && URL_H_VERSION_MINOR < DEPENDS_URL_H_MINOR) || \
     (URL_H_VERSION_MAJOR == DEPENDS_URL_H_MAJOR && URL_H_VERSION_MINOR == DEPENDS_URL_H_MINOR && URL_H_VERSION_PATCH < DEPENDS_URL_H_PATCH)
-#error "Depends on url.h version " DEPENDS_URL_H_VERSION ". You can download this from https://github.com/hughdavenport.url.h"
+#error "Depends on url.h version " DEPENDS_URL_H_VERSION ". You can download this from https://github.com/hughdavenport/url.h"
 #endif // !defined(URL_H)
 
 #include <stdbool.h>
