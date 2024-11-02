@@ -1,9 +1,11 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <sysexits.h>
+#include <unistd.h>
 
 #include "sha1.h"
 
@@ -73,4 +75,32 @@ int hash_file(const char *fname) {
 end:
     if (f) if (!fclose(f)) return EX_IOERR;
     return ret;
+}
+
+bool read_full(int sock, void *data, size_t length) {
+    ssize_t bytes_read = 0;
+    while ((size_t)bytes_read < length) {
+        ssize_t read_ret = read(sock, (uint8_t *)data + bytes_read, length - bytes_read);
+        if (read_ret <= 0) {
+            fprintf(stderr, "ERROR Could only read %lu bytes out of %lu\n", bytes_read, length);
+            return false;
+        }
+        bytes_read += read_ret;
+        fprintf(stderr, "read %lu bytes out of %lu\n", bytes_read, length);
+    }
+    return true;
+}
+
+bool write_full(int sock, void *data, size_t length) {
+    ssize_t bytes_written = 0;
+    while ((size_t)bytes_written < length) {
+        ssize_t ret = write(sock, (uint8_t *)data + bytes_written, length - bytes_written);
+        if (ret <= 0) {
+            fprintf(stderr, "ERROR Could only send %lu bytes out of %lu\n", bytes_written, length);
+            return false;
+        }
+        bytes_written += ret;
+        fprintf(stderr, "written %lu bytes out of %lu\n", bytes_written, length);
+    }
+    return true;
 }

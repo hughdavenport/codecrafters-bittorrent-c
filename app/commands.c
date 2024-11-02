@@ -11,6 +11,7 @@
 #include "url.h"
 
 int hash_file(const char *fname); // common.c
+int download_piece_from_file(char *fname, char *output, long piece); // pieces.c
 
 int handshake_file(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
@@ -137,6 +138,54 @@ end:
     return ret;
 }
 
+bool parse_download_piece(int argc,  char **argv,
+         char **fname,  char **output, long *piece) {
+    if (argc < 3) {
+        if (argc < 2) {
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent> <piece>\n",
+                    "./your_bittorrent.sh", "download_piece");
+            return false;
+        }
+        *fname = argv[0];
+        char *num_end = NULL;
+        *piece = strtol(argv[1], &num_end, 10);
+        if (*argv[1] != 0 && num_end && *num_end != 0) {
+            fprintf(stderr, "Error: %s is not a number.\n", argv[1]);
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent> <piece>\n",
+                    "./your_bittorrent.sh", "download_piece");
+            return false;
+        }
+    } else {
+        if (argc < 4) {
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent> <piece>\n",
+                    "./your_bittorrent.sh", "download_piece");
+            return false;
+        }
+        const char *piece_string = NULL;
+        if (strcmp(argv[0], "-o") == 0) {
+            *output = argv[1];
+            *fname = argv[2];
+            piece_string = argv[3];
+        } else if (strcmp(argv[1], "-o") == 0) {
+            *fname = argv[0];
+            *output = argv[2];
+            piece_string = argv[3];
+        } else if (strcmp(argv[2], "-o") == 0) {
+            *fname = argv[0];
+            piece_string = argv[1];
+            *output = argv[3];
+        }
+        char *num_end = NULL;
+        *piece = strtol(piece_string, &num_end, 10);
+        if (*piece_string != 0 && num_end && *num_end != 0) {
+            fprintf(stderr, "Error: %s is not a number.\n", piece_string);
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent> <piece>\n",
+                    "./your_bittorrent.sh", "download_piece");
+            return false;
+        }
+    }
+    return true;
+}
 
 
 
@@ -191,5 +240,17 @@ int parse(int argc, char **argv) {
     printf("query = %s\n", url.query);
     printf("fragment = %s\n", url.fragment);
     return ret;
+}
+
+int download_piece(int argc, char **argv) {
+    // download_piece -o output sample.torrent <piece>
+    char *fname = NULL;
+    char *output = NULL;
+    long piece;
+    if (!parse_download_piece(argc, argv, &fname, &output, &piece)) {
+        return EX_USAGE;
+    }
+    if (piece < 0) return EX_USAGE;
+    return download_piece_from_file(fname, output, piece);
 }
 
