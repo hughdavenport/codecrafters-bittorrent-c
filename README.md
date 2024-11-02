@@ -61,3 +61,4 @@ $ ./your_bittorrent.sh hash sample.torrent
 This repo uses a few stb-style header only libraries I wrote:
  - [sha1.h](https://github.com/hughdavenport/sha1.h)
  - [url.h](https://github.com/hughdavenport/url.h)
+ - [http.h](https://github.com/hughdavenport/http.h)

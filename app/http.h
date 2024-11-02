@@ -30,10 +30,10 @@ SOFTWARE.
 #define HTTP_H_VERSION_PATCH 0
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define HTTP_H_VERSION \
-    TOSTRING(HTTP_H_VERSION_MAJOR) "." \
-    TOSTRING(HTTP_H_VERSION_MINOR) "." \
-    TOSTRING(HTTP_H_VERSION_PATCH)
+#define HTTP_H_VERSION_MAJOR_S TOSTRING(HTTP_H_VERSION_MAJOR)
+#define HTTP_H_VERSION_MINOR_S TOSTRING(HTTP_H_VERSION_MINOR)
+#define HTTP_H_VERSION_PATCH_S TOSTRING(HTTP_H_VERSION_PATCH)
+#define HTTP_H_VERSION HTTP_H_VERSION_MAJOR_S "." HTTP_H_VERSION_MINOR_S "." HTTP_H_VERSION_PATCH_S
 
 #define DEPENDS_URL_H_VERSION_MAJOR 1
 #define DEPENDS_URL_H_VERSION_MINOR 0
@@ -387,7 +387,7 @@ bool _add_http_headers(HttpHeaders *headers, void *start, ...) {
     va_end(args);
 
     if (args_count % 2 != 0) {
-        fprintf(stderr, "ERROR: build_http_headers() should be called with an even number of arguments. Try using the HTTP_HEADER macro.\n");
+        fprintf(stderr, "ERROR: add_http_headers() should be called with an even number of arguments. Try using the HTTP_HEADER macro.\n");
         return NULL;
     }
 
