@@ -273,11 +273,6 @@ bool _read_http_response(int sock, HttpResponse *response) {
     }
     *space = 0;
     response->status_code = atoi((char *)status);
-    if (strcmp(status, "200") != 0) {
-        fprintf(stderr, "Non-OK status %s\n", status);
-        *space = ' ';
-        goto cleanup;
-    }
     *space = ' ';
     response->status_message = strdup((char *)space + 1);
     if (response->status_message == NULL) {

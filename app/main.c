@@ -21,6 +21,7 @@
 #include "http.h"
 
 int decode(int argc, char **argv);
+int info(int argc, char **argv);
 
 #define s(str) str, strlen(str)
 
@@ -51,70 +52,6 @@ typedef struct {
     uint32_t begin;
     uint32_t length;
 } RequestPayload;
-
-int info_file(const char *fname) {
-    int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
-    if (!decoded) goto end;
-    if (decoded->type != DICT) goto end;
-    BencodedDict *dict = (BencodedDict *)decoded->data;
-
-    BencodedValue *announce = bencoded_dict_value(dict, "announce");
-    if (!announce) goto end;
-    if (announce->type != BYTES) goto end;
-    printf("Tracker URL: ");
-    print_bencoded_value(announce, (BencodedPrintConfig) {.noquotes = true, .newline=true});
-
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
-    printf("Length: ");
-    print_bencoded_value(length, (BencodedPrintConfig) {.newline = true});
-
-    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
-    if (!sha1_digest((const uint8_t*)info->start,
-                    (info->end - info->start),
-                    info_hash)) {;
-        goto end;
-    }
-
-    printf("Info Hash: ");
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        printf("%02x", info_hash[idx]);
-    }
-    printf("\n");
-
-    BencodedValue *piece_length = bencoded_dict_value((BencodedDict *)info->data, "piece length");
-    if (!piece_length) goto end;
-    if (piece_length->type != INTEGER) goto end;
-    ret = EX_OK;
-    printf("Piece Length: %ld\n", piece_length->size);
-
-    BencodedValue *pieces = bencoded_dict_value((BencodedDict *)info->data, "pieces");
-    if (!pieces) goto end;
-    if (pieces->type != BYTES) goto end;
-    printf("Piece Hashes:\n");
-    for (size_t piece = 0; piece < pieces->size / SHA1_DIGEST_BYTE_LENGTH; piece ++) {
-        for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-            printf("%02x", ((uint8_t *)pieces->data)[piece * SHA1_DIGEST_BYTE_LENGTH + idx]);
-        }
-        printf("\n");
-    }
-    printf("\n");
-
-end:
-    if (decoded) {
-        free((void *)decoded->start); // Free memory allocated in decode_bencoded_file
-        free_bencoded_value(decoded);
-    }
-    if (errno) {
-        int ret = errno;
-        return ret;
-    }
-    return ret;
-}
 
 bool add_query_string(URL *url,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
@@ -234,6 +171,11 @@ int peers_file(const char *fname) {
         goto end;
     }
 
+    if (response.status_code != 200) {
+        fprintf(stderr, "Non 200 status code: %d\n", response.status_code);
+        goto end;
+    }
+
     ret = EX_PROTOCOL;
     BencodedValue *decoded_response = decode_bencoded_bytes(response.body, response.body + response.content_length);
     if (!decoded_response || decoded_response->type != DICT) goto end;
@@ -242,7 +184,7 @@ int peers_file(const char *fname) {
     if (!peers || peers->type != BYTES) goto end;
     if (peers->size % 6 != 0) goto end;
 
-    for (size_t idx; (idx + 1) * 6 <= peers->size; idx ++) {
+    for (size_t idx = 0; (idx + 1) * 6 <= peers->size; idx ++) {
         printf("%d.%d.%d.%d",
                 ((uint8_t *)peers->data)[6 * idx + 0],
                 ((uint8_t *)peers->data)[6 * idx + 1],
@@ -333,6 +275,11 @@ int random_peer(BencodedDict *dict,
     ret = EX_UNAVAILABLE;
     HttpResponse response = {0};
     if (!send_http_request(&url, NULL, NULL, &response)) {
+        goto end;
+    }
+
+    if (response.status_code != 200) {
+        fprintf(stderr, "Non 200 status code: %d\n", response.status_code);
         goto end;
     }
 
@@ -761,8 +708,7 @@ int main(int argc, char* argv[]) {
     if (strcmp(command, "decode") == 0) {
         return decode(argc - 2, argv + 2);
     } else if (strcmp(command, "info") == 0) {
-        const char *fname = argv[2];
-        return info_file(fname);
+        return info(argc - 2, argv + 2);
     } else if (strcmp(command, "peers") == 0) {
         const char *fname = argv[2];
         return peers_file(fname);
