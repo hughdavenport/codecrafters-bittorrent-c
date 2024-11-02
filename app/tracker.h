@@ -87,6 +87,7 @@ bool add_query_string(URL *url,
         }
         if (snprintf(new_query, query_string_len + 1, "%s&", url->query) != (int)query_string_len + 1) {
             fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+            free(new_query);
             return false;
         }
         url->query = new_query; // Don't free original query, it is most likely part of a larger buffer from parse_url
@@ -182,6 +183,7 @@ int tracker_response(BencodedDict *dict,
     http_response.body = NULL; // memory is now owned by ret
     ret = EX_OK;
 end:
+    free(url.query); // Allocated in add_query_string
     free_http_response(&http_response);
     return ret;
 }

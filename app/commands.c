@@ -31,26 +31,28 @@ int handshake_file(const char *fname, const char *peer) {
         goto end;
     }
 
+    char *peer_str = NULL;
     if (peer == NULL) {
         // pick a random one, useful for testing
         char temp[PEER_STRING_SIZE];
-        int random_ret = random_peer(dict, info_hash, temp);
-        if (random_ret != EX_OK) {
-            ret = random_ret;
+        ret = EX_UNAVAILABLE;
+        if (!random_peer(dict, info_hash, temp)) {
             goto end;
         }
-        peer = temp;
+        peer_str = strdup(temp);
+    } else {
+        peer_str = strdup(peer);
     }
-    fprintf(stderr, "Using peer %s\n", peer);
+    fprintf(stderr, "Using peer %s\n", peer_str);
     // FIXME else should we validate supplied peer is on tracker?
 
     ret = EX_USAGE;
-    char *colon = index(peer, ':');
+    char *colon = index(peer_str, ':');
     if (colon == NULL) goto end;
     *colon = 0;
     ret = EX_UNAVAILABLE;
     uint8_t response[HANDSHAKE_SIZE];
-    int sock = handshake_peer(peer, colon + 1, info_hash, response);
+    int sock = handshake_peer(peer_str, colon + 1, info_hash, response);
     *colon = ':';
     if (sock == -1) goto end;
     if (sock < 0) {
@@ -66,6 +68,7 @@ int handshake_file(const char *fname, const char *peer) {
 
     ret = EX_OK;
 end:
+    if (peer_str) free(peer_str);
     if (sock != -1) close(sock);
     if (decoded) {
         free((void*)decoded->start); // Memory from decode_bencoded_file
