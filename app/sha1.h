@@ -25,6 +25,12 @@ SOFTWARE.
 #ifndef SHA1_H
 #define SHA1_H
 
+#define SHA1_H_VERSION_MAJOR "1"
+#define SHA1_H_VERSION_MINOR "0"
+#define SHA1_H_VERSION_PATCH "0"
+#define SHA1_H_VERSION \
+    SHA1_H_VERSION_MAJOR "." SHA1_H_VERSION_MINOR "." SHA1_H_VERSION_PATCH
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>

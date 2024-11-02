@@ -25,6 +25,12 @@ SOFTWARE.
 #ifndef BENCODE_H
 #define BENCODE_H
 
+#define BENCODE_H_VERSION_MAJOR "0"
+#define BENCODE_H_VERSION_MINOR "0"
+#define BENCODE_H_VERSION_PATCH "0"
+#define BENCODE_H_VERSION \
+    BENCODE_H_VERSION_MAJOR "." BENCODE_H_VERSION_MINOR "." BENCODE_H_VERSION_PATCH
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
