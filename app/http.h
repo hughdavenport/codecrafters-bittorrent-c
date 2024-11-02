@@ -22,9 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-
 #ifndef HTTP_H
 #define HTTP_H
+
+#ifndef URL_H
+#error "Depends on url.h. You can download this from https://github.com/hughdavenport.url.h"
+#endif
 
 #include <stdbool.h>
 #include <unistd.h>
