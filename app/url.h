@@ -27,7 +27,7 @@ SOFTWARE.
 
 #define URL_H_VERSION_MAJOR 1
 #define URL_H_VERSION_MINOR 0
-#define URL_H_VERSION_PATCH 0
+#define URL_H_VERSION_PATCH 1
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -126,8 +126,8 @@ bool parse_url(char *start, char *end, URL *ret) {
         fprintf(stderr, "Unsupported scheme: %s\n", ret->scheme);
         return false;
     }
-    if (p + 1 >= end || *(p + 1) != '/' || *(p + 2) != '/') {
-        if (p + 1 >= end) {
+    if (p + 2 >= end || *(p + 1) != '/' || *(p + 2) != '/') {
+        if (p + 2 >= end) {
             fprintf(stderr, "Invalid URL. Expected authority or path after scheme\n");
             return false;
         }
