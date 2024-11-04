@@ -175,12 +175,16 @@ int tracker_response(BencodedDict *dict,
         goto end;
     }
 
+    if (http_response.body == NULL) {
+        fprintf(stderr, "Could not find HTTP body.\n");
+        goto end;
+    }
+
     BencodedValue *tmp = decode_bencoded_bytes(http_response.body, http_response.body + http_response.content_length);
     if (!tmp) goto end;
     if (tmp->type != DICT) goto end;
 
     *response = tmp;
-    http_response.body = NULL; // memory is now owned by ret
     ret = EX_OK;
 end:
     free(url.query); // Allocated in add_query_string

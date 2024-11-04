@@ -25,7 +25,7 @@ SOFTWARE.
 #ifndef BENCODE_H
 #define BENCODE_H
 
-#define BENCODE_H_VERSION_MAJOR 1
+#define BENCODE_H_VERSION_MAJOR 2
 #define BENCODE_H_VERSION_MINOR 0
 #define BENCODE_H_VERSION_PATCH 0
 
@@ -69,6 +69,7 @@ typedef struct {
 
 void free_bencoded_value(BencodedValue *value);
 
+// end is pointer to end of bytes (if NULL then set to `bencoded_value + strlen(bencoded_value)`)
 BencodedValue *decode_bencoded_bytes(const uint8_t *bencoded_value, const uint8_t *end);
 BencodedValue *decode_bencoded_file(const char* fname);
 
@@ -91,24 +92,34 @@ void free_bencoded_dict(BencodedDict *dict);
 void free_bencoded_list(BencodedList *list) {
     if (!list) return;
     free_bencoded_value(list->value);
-    free_bencoded_list(list->next);
-    free(list);
+    if (list->next) {
+        free_bencoded_list(list->next);
+        free(list->next);
+    }
 }
 
 void free_bencoded_dict(BencodedDict *dict) {
     if (!dict) return;
     free_bencoded_value(dict->key);
     free_bencoded_value(dict->value);
-    free_bencoded_dict(dict->next);
-    free(dict);
+    if (dict->next) {
+        free_bencoded_dict(dict->next);
+        free(dict->next);
+    }
 }
 
 void free_bencoded_value(BencodedValue *value) {
     if (!value) return;
-    switch (value->type) {
+    if (value->data) switch (value->type) {
         case BYTES: free(value->data); break;
-        case LIST: free_bencoded_list((BencodedList *)value->data); break;
-        case DICT: free_bencoded_dict((BencodedDict *)value->data); break;
+        case LIST:
+            free_bencoded_list((BencodedList *)value->data);
+            free(value->data);
+            break;
+        case DICT:
+            free_bencoded_dict((BencodedDict *)value->data);
+            free(value->data);
+            break;
 
         case INTEGER: break;
         case UNKNOWN: break;
@@ -117,6 +128,7 @@ void free_bencoded_value(BencodedValue *value) {
 }
 
 BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_t*end) {
+    if (end == NULL) end = bencoded_value + strlen((char *)bencoded_value);
     char first = bencoded_value[0];
     switch (first) {
         case '0':
@@ -129,14 +141,26 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
         case '7':
         case '8':
         case '9': {
-            // FIXME use strtol to detect errors
-            int length = atoi((char *)bencoded_value);
-            const char* colon_index = strchr((char *)bencoded_value, ':');
-            if (colon_index == NULL) {
-                fprintf(stderr, "Invalid encoded value: %s\n", bencoded_value);
+            size_t length = first - '0';
+            const uint8_t *p = bencoded_value + 1;
+            while (p && p < end && *p != ':') {
+                if (10 * length + (*p - '0') < length) {
+                    // overflow
+                    return NULL;
+                }
+                length = 10 * length + (*p - '0');
+                p ++;
+            }
+            if (!p || p >= end || *p != ':') {
+                fprintf(stderr, "Expected : after byte count\n");
                 return NULL;
             }
-            const uint8_t* start = (uint8_t *)colon_index + 1;
+            if (length > (size_t)(end - p)) {
+                fprintf(stderr, "Expected %lu bytes after colon, found %lu bytes\n",
+                        length, end - p);
+                return NULL;
+            }
+            const uint8_t* start = p + 1;
             void *data = malloc(length);
             if (!data) return NULL;
             memcpy(data, start, length);
@@ -181,7 +205,7 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             }
             BencodedList *data = l;
             size_t size = 0;
-            while (str < end && *str != 'e') {
+            while (str && str < end && *str != 'e') {
                 size ++;
                 l->value = decode_bencoded_bytes(str, end);
                 if (!l->value || l->value->type == UNKNOWN) {
@@ -190,7 +214,7 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
                     return NULL;
                 }
                 str = l->value->end;
-                if (str && *str != 'e') {
+                if (str && str < end && *str != 'e') {
                     l->next = calloc(1, sizeof(BencodedList));
                     if (!l->next) {
                         fprintf(stderr, "Out of memory\n");
@@ -225,7 +249,7 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
             }
             BencodedDict *data = d;
             size_t size = 0;
-            while (str < end && *str != 'e') {
+            while (str && str < end && *str != 'e') {
                 size ++;
 
                 d->key = decode_bencoded_bytes(str, end);
@@ -235,6 +259,12 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
                     return NULL;
                 }
                 str = d->key->end;
+                if (!str || str >= end || *str == 'e') {
+                    fprintf(stderr, "Out of memory\n");
+                    free_bencoded_dict(data);
+                    free(data);
+                    return NULL;
+                }
 
                 d->value = decode_bencoded_bytes(str, end);
                 if (!d->value || d->value->type == UNKNOWN) {
@@ -244,7 +274,7 @@ BencodedValue *decode_bencoded_bytes(const uint8_t* bencoded_value, const uint8_
                 }
                 str = d->value->end;
 
-                if (str < end && *str != 'e') {
+                if (str && str < end && *str != 'e') {
                     d->next = calloc(1, sizeof(BencodedDict));
                     if (!d->next) {
                         fprintf(stderr, "Out of memory\n");
@@ -286,16 +316,18 @@ BencodedValue *decode_bencoded_file(const char* fname) {
     if (fsize < 0) goto end;
     if (fseek(f, 0, SEEK_SET) != 0) goto end;
 
-    uint8_t *data = (uint8_t *)malloc(fsize);
+    uint8_t *data = (uint8_t *)malloc(fsize + 1);
     size_t read_total = 0;
     while (read_total < (unsigned)fsize) {
         size_t read_count = fread(data, 1, fsize, f);
         if (read_count == 0) goto end;
         read_total += read_count;
     }
+    data[fsize] = 0;
 
     ret = decode_bencoded_bytes(data, data + fsize);
 end:
+    if (data) free(data);
     if (f) fclose(f);
     return ret;
 }

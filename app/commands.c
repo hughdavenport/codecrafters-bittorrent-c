@@ -71,10 +71,7 @@ int handshake_file(const char *fname, const char *peer) {
 end:
     if (peer_str) free(peer_str);
     if (sock != -1) close(sock);
-    if (decoded) {
-        free((void*)decoded->start); // Memory from decode_bencoded_file
-        free_bencoded_value(decoded);
-    }
+    if (decoded) free_bencoded_value(decoded);
     return ret;
 }
 
@@ -131,10 +128,7 @@ int info_file(const char *torrent_file) {
     printf("\n");
 
 end:
-    if (decoded) {
-        free((void *)decoded->start); // Free memory allocated in decode_bencoded_file
-        free_bencoded_value(decoded);
-    }
+    if (decoded) free_bencoded_value(decoded);
     return ret;
 }
 

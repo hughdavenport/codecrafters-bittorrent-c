@@ -139,14 +139,8 @@ int peers_from_file(const char *torrent_file) {
 
     ret = EX_OK;
 end:
-    if (decoded) {
-        free((void*)decoded->start);
-        free_bencoded_value(decoded);
-    }
-    if (response) {
-        free((void*)response->start); // Memory was given to us by tracker_response()
-        free_bencoded_value(response);
-    }
+    if (decoded) free_bencoded_value(decoded);
+    if (response) free_bencoded_value(response);
     return ret;
 }
 
@@ -181,10 +175,7 @@ bool random_peer(BencodedDict *dict,
 
     ret = true;
 end:
-    if (response) {
-        free((void*)response->start); // Memory was given to us by tracker_response()
-        free_bencoded_value(response);
-    }
+    if (response) free_bencoded_value(response);
     return ret;
 }
 

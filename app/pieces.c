@@ -173,12 +173,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
 end:
     if (sock != -1) close(sock);
-    if (decoded) {
-        free((void*)decoded->start);
-        free_bencoded_value(decoded);
-    }
+    if (decoded) free_bencoded_value(decoded);
     if (out && out != stdin) fclose(out);
     return ret;
 }
-
-
