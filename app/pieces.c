@@ -44,7 +44,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     if (out == NULL) return EX_CANTCREAT;
 
     int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
+    BencodedValue *decoded = decode_bencoded_file(fname, true);
     if (!decoded || decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
 
@@ -63,6 +63,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
         goto end;
     }
 
+    // info->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
@@ -173,7 +174,11 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
 end:
     if (sock != -1) close(sock);
-    if (decoded) free_bencoded_value(decoded);
+    if (decoded) {
+        // decoded->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
+        free((void *)decoded->start);
+        free_bencoded_value(decoded);
+    }
     if (out && out != stdin) fclose(out);
     return ret;
 }

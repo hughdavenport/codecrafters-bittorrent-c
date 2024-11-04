@@ -97,7 +97,7 @@ int handshake_peer(const char *host, const char *port, const uint8_t info_hash[S
 
 int peers_from_file(const char *torrent_file) {
     int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(torrent_file);
+    BencodedValue *decoded = decode_bencoded_file(torrent_file, true);
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
@@ -107,6 +107,7 @@ int peers_from_file(const char *torrent_file) {
     BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
     if (!length || length->type != INTEGER) goto end;
 
+    // info->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
@@ -139,7 +140,11 @@ int peers_from_file(const char *torrent_file) {
 
     ret = EX_OK;
 end:
-    if (decoded) free_bencoded_value(decoded);
+    if (decoded) {
+        // decoded->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
+        free((void *)decoded->start);
+        free_bencoded_value(decoded);
+    }
     if (response) free_bencoded_value(response);
     return ret;
 }

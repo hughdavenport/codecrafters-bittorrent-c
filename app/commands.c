@@ -15,7 +15,7 @@ int download_piece_from_file(char *fname, char *output, long piece); // pieces.c
 
 int handshake_file(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname);
+    BencodedValue *decoded = decode_bencoded_file(fname, true);
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
@@ -25,6 +25,7 @@ int handshake_file(const char *fname, const char *peer) {
     BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
     if (!length || length->type != INTEGER) goto end;
 
+    // info->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
@@ -71,13 +72,17 @@ int handshake_file(const char *fname, const char *peer) {
 end:
     if (peer_str) free(peer_str);
     if (sock != -1) close(sock);
-    if (decoded) free_bencoded_value(decoded);
+    if (decoded) {
+        // decoded->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
+        free((void *)decoded->start);
+        free_bencoded_value(decoded);
+    }
     return ret;
 }
 
 int info_file(const char *torrent_file) {
     int ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(torrent_file);
+    BencodedValue *decoded = decode_bencoded_file(torrent_file, true);
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
@@ -96,6 +101,7 @@ int info_file(const char *torrent_file) {
     printf("Length: ");
     print_bencoded_value(length, (BencodedPrintConfig) {.newline = true});
 
+    // info->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
                     (info->end - info->start),
@@ -128,7 +134,11 @@ int info_file(const char *torrent_file) {
     printf("\n");
 
 end:
-    if (decoded) free_bencoded_value(decoded);
+    if (decoded) {
+        // decoded->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
+        free((void *)decoded->start);
+        free_bencoded_value(decoded);
+    }
     return ret;
 }
 
