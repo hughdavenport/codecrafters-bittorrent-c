@@ -73,6 +73,7 @@ int hash_file(const char *fname) {
 
     ret = EX_OK;
 end:
+    if (data) free(data);
     if (f) if (!fclose(f)) return EX_IOERR;
     return ret;
 }
