@@ -26,7 +26,7 @@ SOFTWARE.
 #define HTTP_H
 
 #define HTTP_H_VERSION_MAJOR 1
-#define HTTP_H_VERSION_MINOR 0
+#define HTTP_H_VERSION_MINOR 1
 #define HTTP_H_VERSION_PATCH 1
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -95,6 +95,10 @@ typedef struct {
 
 int is_http_token_delimiter(char c);
 
+#ifdef HTTP_FUZZ
+bool fuzz_http_response(int sock, HttpResponse *response);
+#endif // HTTP_FUZZ
+
 /*
  * Send a HTTP request to the supplied URL.
  * - `agent` is used to set the `User-Agent` header, the `Cookie` header, and manage the cookie entries
@@ -132,7 +136,13 @@ int is_http_token_delimiter(char c) {
 char *read_line(char *start, char *end, char **ret) {
     if (start >= end) return NULL;
     char *p = start;
-    while (p < end && *p != '\r') p++;
+    while (p < end && *p != '\r') {
+        if (*p == '\n') {
+            fprintf(stderr, "Expected \\r before \\n.\n");
+            return NULL;
+        }
+        p++;
+    }
     if (p >= end) {
         *ret = start;
         return p;
@@ -249,15 +259,16 @@ bool _read_http_response(int sock, HttpResponse *response) {
     if (response == NULL) return false;
     bool ret = false;
 #define HTTP_BUF_SIZE 4096
-    uint8_t buf[HTTP_BUF_SIZE]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
+    uint8_t buf[HTTP_BUF_SIZE + 1]; // FIXME: This is just on stack, and a limited size. May need to allocate if larger responses
     int len = read(sock, buf, HTTP_BUF_SIZE);
     if (len <= 0) {
         fprintf(stderr, "Could not read from socket\n");
         return false;
     }
     char *p = (char *)buf;
-    char *line;
+    char *line = NULL;
     char *end = (char*)buf + len;
+    *end = 0; // for <strings.h> stuff
 
     response->headers = calloc(1, sizeof(HttpHeaders));
     if (response->headers == NULL) {
@@ -266,12 +277,13 @@ bool _read_http_response(int sock, HttpResponse *response) {
     }
 
     p = read_line(p, end, &line);
+    if (p == NULL) goto cleanup;
     char *space = index(line, ' ');
     if (space == NULL || strncmp(line, "HTTP/", strlen("HTTP/")) != 0) {
         fprintf(stderr, "Wrong protocol recieved: %s\n", line);
         goto cleanup;
     }
-    if (strncmp(line + strlen("HTTP/"), "1.", strlen("1.") != 0)) {
+    if (strncmp(line + strlen("HTTP/"), "1.", strlen("1.")) != 0) {
         *space = 0;
         fprintf(stderr, "Wrong HTTP version %s\n", (line + strlen("HTTP/")));
         *space = ' ';
@@ -307,9 +319,18 @@ bool _read_http_response(int sock, HttpResponse *response) {
             break;
         }
         char *colon = index(line, ':');
+        if (colon == NULL) {
+            fprintf(stderr, "Header value didn't have expected `:`.\n");
+            goto cleanup;
+        }
         *colon = 0;
         if (strncasecmp(line, "Content-Length", strlen("Content-Length")) == 0) {
-            response->content_length = atol(colon + 1);
+            long content_length = atol(colon + 1);
+            if (content_length < 0) {
+                fprintf(stderr, "Negative content-length %ld\n", content_length);
+                goto cleanup;
+            }
+            response->content_length = content_length;
             fprintf(stderr, "Content-Length: %ld\n", response->content_length);
         }
         *colon = ':';
@@ -360,6 +381,15 @@ cleanup:
     return ret;
 }
 
+#ifdef HTTP_FUZZ
+
+bool fuzz_http_response(int sock, HttpResponse *response) {
+    bool ret = false;
+    ret = _read_http_response(sock, response);
+    return ret;
+}
+
+#endif // HTTP_FUZZ
 
 bool send_http_request(URL *url, HttpUserAgent *agent, HttpHeaders *headers, HttpResponse *response) {
     bool ret = false;
