@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <strings.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <arpa/inet.h>
@@ -42,8 +42,11 @@ typedef struct {
 int download_piece_from_file(char *fname, char *output, long piece) {
     FILE *out = output ? fopen(output, "w") : stdout;
     if (out == NULL) return EX_CANTCREAT;
+    int out_fd = fileno(out);
+    int ret = EX_IOERR;
+    if (out_fd < 0) goto end;
 
-    int ret = EX_DATAERR;
+    ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname, true);
     if (!decoded || decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
@@ -63,6 +66,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
         goto end;
     }
 
+    ret = EX_DATAERR;
     // info->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     if (!sha1_digest((const uint8_t*)info->start,
@@ -91,14 +95,18 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     ret = EX_PROTOCOL;
     if (sock < 0) goto end;
 
-    // FIXME multiprocess
-
-    if (sizeof(RequestPayload) != 16) {
-        fprintf(stderr, "sizeof(RequestPayload) != 16 (got %ld)\n", sizeof(RequestPayload));
+    uint8_t *data = malloc(piece_length->size);
+    if (data == NULL) {
+        ret = EX_TEMPFAIL;
+        goto end;
     }
 
+    // FIXME multiprocess
+
     uint32_t packet_length = 0;
-    while (true) {
+    size_t sent_requests = 0;
+    size_t pieces_recieved = 0;
+    while (sent_requests == 0 || pieces_recieved < sent_requests) {
 #define b(var) &var, sizeof(var)
         if (!read_full(sock, b(packet_length))) goto end;
         packet_length = ntohl(packet_length);
@@ -129,6 +137,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                         if (!write_full(sock, b(packet_length))) goto end;
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
+                        sent_requests ++;
                     }
                     payload.length = piece_length->size % BLOCK_SIZE;
                     if (payload.length != 0) {
@@ -137,6 +146,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                         if (!write_full(sock, b(packet_length))) goto end;
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
+                        sent_requests ++;
                     }
 
                     packet_length = 0;
@@ -157,6 +167,36 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     packet_length = 0;
                 }; break;
 
+                case PIECE: {
+                    fprintf(stderr, "got PIECE\n");
+                    if (packet_length < sizeof(uint32_t) * 2) {
+                        fprintf(stderr, "Expected index and begin, but only %u bytes in packet\n",
+                                packet_length);
+                        goto end;
+                    }
+                    if (sent_requests == 0 || pieces_recieved >= sent_requests) {
+                        fprintf(stderr, "Unexpected PIECE message\n");
+                        goto end;
+                    }
+
+                    uint32_t index, begin;
+                    if (!read_full(sock, b(index))) goto end;
+                    index = ntohl(index);
+                    if (!read_full(sock, b(begin))) goto end;
+                    begin = ntohl(begin);
+                    packet_length -= sizeof(uint32_t) * 2;
+
+                    if (index != piece) {
+                        fprintf(stderr, "Expected index %ld, got %d\n",
+                                piece, index);
+                        goto end;
+                    }
+
+                    // FIXME validate begin are in range
+                    if (!read_full(sock, data + begin, packet_length)) goto end;
+
+                    pieces_recieved ++;
+                }; break;
 
                 default:
                     if (type > CANCEL) {
@@ -171,8 +211,39 @@ int download_piece_from_file(char *fname, char *output, long piece) {
         }
     }
 
-    fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+    // FIXME check hash
+    uint8_t piece_hash[SHA1_DIGEST_BYTE_LENGTH];
+    if (!sha1_digest(data, piece_length->size, piece_hash)) {
+        goto end;
+    }
+
+    if (memcmp(piece_hash,
+                (uint8_t *)pieces->data + piece * SHA1_DIGEST_BYTE_LENGTH,
+                SHA1_DIGEST_BYTE_LENGTH) != 0) {
+        fprintf(stderr, "Piece hash mixmatch\n");
+        fprintf(stderr, "Expected: ");
+        for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+            fprintf(stderr, "%02x", ((uint8_t *)pieces->data)[piece * SHA1_DIGEST_BYTE_LENGTH + idx]);
+        }
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Actual:   ");
+        for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+            fprintf(stderr, "%02x", piece_hash[idx]);
+        }
+        fprintf(stderr, "\n");
+        goto end;
+    }
+
+
+    ret = EX_IOERR;
+    if (!write_full(out_fd, data, piece_length->size)) {
+        goto end;
+    }
+
+    ret = EX_OK;
+
 end:
+    if (data) free(data);
     if (sock != -1) close(sock);
     if (decoded) {
         // decoded->start is only valid if `true` is passed to `decode_bencoded_file` to keep memory around
