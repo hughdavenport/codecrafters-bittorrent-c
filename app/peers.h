@@ -88,6 +88,8 @@ int handshake_peer(const char *host, const char *port, const uint8_t info_hash[S
 
 #ifdef PEERS_IMPLEMENTATION
 
+#include <time.h>
+
 // 20 byte identifier. This is random data
 #define PEER_ID "AdtLtU86udGzzN5m9GDs"
 #define HANDSHAKE_PROTOCOL "BitTorrent protocol"
