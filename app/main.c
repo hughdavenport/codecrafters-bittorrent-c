@@ -33,6 +33,7 @@
 
 int hash_file(const char *fname); // common.c
 int download_piece_from_file(char *fname, char *output, long piece); // pieces.c
+int download_from_file(char *fname, char *output); // pieces.c
 
 int handshake_file(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
@@ -212,6 +213,31 @@ bool parse_download_piece(int argc,  char **argv,
     return true;
 }
 
+bool parse_download(int argc,  char **argv, char **fname,  char **output) {
+    if (argc < 2) {
+        if (argc < 1) {
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent>\n",
+                    "./your_bittorrent.sh", "download");
+            return false;
+        }
+        *fname = argv[0];
+    } else {
+        if (argc < 3) {
+            fprintf(stderr, "Usage %s %s [-o <output>] <torrent>\n",
+                    "./your_bittorrent.sh", "download");
+            return false;
+        }
+        if (strcmp(argv[0], "-o") == 0) {
+            *output = argv[1];
+            *fname = argv[2];
+        } else if (strcmp(argv[1], "-o") == 0) {
+            *fname = argv[0];
+            *output = argv[2];
+        }
+    }
+    return true;
+}
+
 
 
 int decode(int argc, char **argv) {
@@ -279,6 +305,16 @@ int download_piece(int argc, char **argv) {
     return download_piece_from_file(fname, output, piece);
 }
 
+int download(int argc, char **argv) {
+    // download -o output sample.torrent
+    char *fname = NULL;
+    char *output = NULL;
+    if (!parse_download(argc, argv, &fname, &output)) {
+        return EX_USAGE;
+    }
+    return download_from_file(fname, output);
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -311,6 +347,8 @@ int main(int argc, char* argv[]) {
         return handshake(argc - 2, argv + 2);
     } else if (strcmp(command, "download_piece") == 0) {
         return download_piece(argc - 2, argv + 2);
+    } else if (strcmp(command, "download") == 0) {
+        return download(argc - 2, argv + 2);
     } else if (strcmp(command, "parse") == 0) {
         return parse(argc - 2, argv + 2);
     } else if (strcmp(command, "hash") == 0) {
