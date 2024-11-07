@@ -7,5 +7,7 @@
 # DON'T EDIT THIS!
 set -e
 tmpFile=$(mktemp)
-gcc -Wall -Wextra -Wpedantic -lcurl -lcrypto app/*.c -o $tmpFile
+CFLAGS=
+#CFLAGS="-g -ggdb -fsanitize=address"
+gcc $CFLAGS -Wall -Wextra -Wpedantic -lcurl -lcrypto app/*.c -o $tmpFile
 exec "$tmpFile" "$@"

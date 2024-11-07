@@ -1,0 +1,106 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<dfxml xmloutputversion='1.0'>
+  <metadata 
+  xmlns='http://afflib.org/tcpflow/' 
+  xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' 
+  xmlns:dc='http://purl.org/dc/elements/1.1/'>
+    <dc:type>Feature Extraction</dc:type>
+  </metadata>
+  <creator version='1.0'>
+    <program>TCPFLOW</program>
+    <version>1.6.1</version>
+    <build_environment>
+      <compiler>11.2.0 (11.2.0)</compiler>
+      <CPPFLAGS>-I/usr/local/include -Wdate-time -D_FORTIFY_SOURCE=2 -I/usr/local/include -DUTC_OFFSET=+0000</CPPFLAGS>
+      <CFLAGS>-g -g -O3 -ffile-prefix-map=/build/tcpflow-WmFafb/tcpflow-1.6.1=. -flto=auto -ffat-lto-objects -fstack-protector-strong -Wformat -Werror=format-security -MD -Wpointer-arith -Wmissing-declarations -Wmissing-prototypes -Wshadow -Wwrite-strings -Wcast-align -Waggregate-return -Wbad-function-cast -Wcast-qual -Wundef -Wredundant-decls -Wdisabled-optimization -Wfloat-equal -Wmultichar -Wc++-compat -Wmissing-noreturn -Wall -Wstrict-prototypes -MD -D_FORTIFY_SOURCE=2 -Wpointer-arith -Wmissing-declarations -Wmissing-prototypes -Wshadow -Wwrite-strings -Wcast-align -Waggregate-return -Wbad-function-cast -Wcast-qual -Wundef -Wredundant-decls -Wdisabled-optimization -Wfloat-equal -Wmultichar -Wc++-compat -Wmissing-noreturn -Wall -Wstrict-prototypes</CFLAGS>
+      <CXXFLAGS>-g -g -O3 -ffile-prefix-map=/build/tcpflow-WmFafb/tcpflow-1.6.1=. -flto=auto -ffat-lto-objects -fstack-protector-strong -Wformat -Werror=format-security -Wall -MD -D_FORTIFY_SOURCE=2 -Wpointer-arith -Wshadow -Wwrite-strings -Wcast-align -Wredundant-decls -Wdisabled-optimization -Wfloat-equal -Wmultichar -Wmissing-noreturn -Woverloaded-virtual -Wsign-promo -funit-at-a-time -Weffc++ -Wno-address-of-packed-member</CXXFLAGS>
+      <LDFLAGS>-L/usr/local/lib -Wl,-Bsymbolic-functions -flto=auto -Wl,-z,relro -L/usr/local/lib</LDFLAGS>
+      <LIBS>-lpcap -lcairo -lfontconfig -lfreetype -lpixman-1 -lexpat -lcrypto -lssl -lcrypto -ldl -lz </LIBS>
+      <compilation_date>2021-11-24T11:01:14</compilation_date>
+      <library name="boost" version="107400"/>
+    </build_environment>
+    <execution_environment>
+      <os_sysname>Linux</os_sysname>
+      <os_release>6.8.0-48-generic</os_release>
+      <os_version>#48~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Mon Oct  7 11:24:13 UTC 2</os_version>
+      <host>LIN-PF-34NTAN</host>
+      <arch>x86_64</arch>
+      <command_line>command line to be provided</command_line>
+      <uid>0</uid>
+      <username>root</username>
+      <start_time>2024-11-07T00:25:23Z</start_time>
+    </execution_environment>
+  </creator>
+  <configuration>
+  </configuration>
+  <tdelta>0</tdelta>
+  <configuration>
+    <fileobject>
+      <filename>192.168.001.202.56108-165.232.035.114.51437</filename>
+      <filesize>167</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.602781Z' endtime='2024-11-07T00:25:29.005951Z' mac_daddr='e0:63:da:26:bc:75' mac_saddr='f4:b3:01:3b:5b:32' family='2' src_ipn='192.168.1.202' dst_ipn='165.232.35.114' srcport='56108' dstport='51437' packets='17' len='1285' />
+    </fileobject>
+    <fileobject>
+      <filename>192.168.001.202.45628-165.232.038.164.51532</filename>
+      <filesize>167</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.602807Z' endtime='2024-11-07T00:25:29.014324Z' mac_daddr='e0:63:da:26:bc:75' mac_saddr='f4:b3:01:3b:5b:32' family='2' src_ipn='192.168.1.202' dst_ipn='165.232.38.164' srcport='45628' dstport='51532' packets='20' len='1483' />
+    </fileobject>
+    <fileobject>
+      <filename>013.248.132.087.00080-192.168.001.202.36642</filename>
+      <filesize>762</filesize>
+      <tcpflow startime='2024-11-07T00:25:33.223986Z' endtime='2024-11-07T00:25:33.799001Z' mac_daddr='f4:b3:01:3b:5b:32' mac_saddr='e0:63:da:26:bc:75' family='2' src_ipn='13.248.132.87' dst_ipn='192.168.1.202' srcport='80' dstport='36642' packets='4' len='990' />
+    </fileobject>
+    <fileobject>
+      <filename>192.168.001.202.36642-013.248.132.087.00080</filename>
+      <filesize>357</filesize>
+      <tcpflow startime='2024-11-07T00:25:33.204768Z' endtime='2024-11-07T00:25:33.799043Z' mac_daddr='e0:63:da:26:bc:75' mac_saddr='f4:b3:01:3b:5b:32' family='2' src_ipn='192.168.1.202' dst_ipn='13.248.132.87' srcport='36642' dstport='80' packets='6' len='701' />
+    </fileobject>
+    <fileobject>
+      <filename>165.232.038.164.51532-192.168.001.202.45628</filename>
+      <filesize>49270</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.929709Z' endtime='2024-11-07T00:25:29.386426Z' mac_daddr='f4:b3:01:3b:5b:32' mac_saddr='e0:63:da:26:bc:75' family='2' src_ipn='165.232.38.164' dst_ipn='192.168.1.202' srcport='51532' dstport='45628' packets='32' len='51390' />
+    </fileobject>
+    <fileobject>
+      <filename>165.232.035.114.51437-192.168.001.202.56108</filename>
+      <filesize>43029</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.929709Z' endtime='2024-11-07T00:25:29.386413Z' mac_daddr='f4:b3:01:3b:5b:32' mac_saddr='e0:63:da:26:bc:75' family='2' src_ipn='165.232.35.114' dst_ipn='192.168.1.202' srcport='51437' dstport='56108' packets='27' len='44819' />
+    </fileobject>
+    <fileobject>
+      <filename>192.168.001.202.43604-165.232.041.073.51556</filename>
+      <filesize>133</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.602828Z' endtime='2024-11-07T00:25:29.386477Z' mac_daddr='e0:63:da:26:bc:75' mac_saddr='f4:b3:01:3b:5b:32' family='2' src_ipn='192.168.1.202' dst_ipn='165.232.41.73' srcport='43604' dstport='51556' packets='20' len='1461' />
+    </fileobject>
+    <fileobject>
+      <filename>165.232.041.073.51556-192.168.001.202.43604</filename>
+      <filesize>32873</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.929702Z' endtime='2024-11-07T00:25:29.386429Z' mac_daddr='f4:b3:01:3b:5b:32' mac_saddr='e0:63:da:26:bc:75' family='2' src_ipn='165.232.41.73' dst_ipn='192.168.1.202' srcport='51556' dstport='43604' packets='23' len='34399' />
+    </fileobject>
+    <fileobject>
+      <filename>013.248.132.087.00080-192.168.001.202.40096</filename>
+      <filesize>782</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.129904Z' endtime='2024-11-07T00:25:26.620732Z' mac_daddr='f4:b3:01:3b:5b:32' mac_saddr='e0:63:da:26:bc:75' family='2' src_ipn='13.248.132.87' dst_ipn='192.168.1.202' srcport='80' dstport='40096' packets='4' len='1010' />
+    </fileobject>
+    <fileobject>
+      <filename>192.168.001.202.40096-013.248.132.087.00080</filename>
+      <filesize>357</filesize>
+      <tcpflow startime='2024-11-07T00:25:26.115558Z' endtime='2024-11-07T00:25:26.620756Z' mac_daddr='e0:63:da:26:bc:75' mac_saddr='f4:b3:01:3b:5b:32' family='2' src_ipn='192.168.1.202' dst_ipn='13.248.132.87' srcport='40096' dstport='80' packets='6' len='701' />
+    </fileobject>
+  </configuration>
+  <summary />
+  <open_fds_at_end>0</open_fds_at_end>
+  <max_open_flows>0</max_open_flows>
+  <total_flows>10</total_flows>
+  <flow_map_size>8</flow_map_size>
+  <total_packets>159</total_packets>
+  <rusage>
+    <utime>0.014365</utime>
+    <stime>0.008379</stime>
+    <maxrss>14196</maxrss>
+    <minflt>1346</minflt>
+    <majflt>0</majflt>
+    <nswap>0</nswap>
+    <inblock>0</inblock>
+    <oublock>32</oublock>
+    <clocktime>13.054092</clocktime>
+  </rusage>
+</dfxml>
