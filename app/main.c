@@ -23,6 +23,14 @@
 #define PEERS_IMPLEMENTATION
 #include "peers.h"
 
+#ifdef BITTORRENT_RELEASE
+#define ERR_OUT(fmt, ...) \
+        fprintf(stderr, (fmt), __VA_ARGS__)
+#else 
+#define ERR_OUT(fmt, ...) \
+        fprintf(stderr, "%s:%d: " fmt, __FILE__, __LINE__, __VA_ARGS__)
+#endif
+
 int decode(int argc, char **argv);
 int info(int argc, char **argv);
 int peers(int argc, char **argv);
@@ -68,7 +76,7 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(command, "hash") == 0) {
         return hash(argc - 2, argv + 2);
     } else {
-        fprintf(stderr, "Unknown command: %s\n", command);
+        ERR_OUT("Unknown command: %s\n", command);
         return EX_USAGE;
     }
 
