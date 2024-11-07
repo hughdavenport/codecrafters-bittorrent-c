@@ -128,11 +128,13 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                 case UNCHOKE: {
                     fprintf(stderr, "got UNCHOKE\n");
                     // FIXME multiprocess
+                    if (packet_length > 0) fprintf(stderr, "unexpected payload\n");
                     while (packet_length > 0) {
                         uint8_t payload;
                         if (!read_full(sock, b(payload))) goto end;
                         packet_length -= 1;
                     }
+
                     type = REQUEST;
                     RequestPayload payload = {
                         .index = htonl(piece),
@@ -146,6 +148,8 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
                         sent_requests ++;
+                        fprintf(stderr, "Sent REQUEST for piece %d, begin %d, length %d\n",
+                                ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
                         payload.begin = htonl(ntohl(payload.begin) + ntohl(payload.length));
                     }
                     payload.length = len % BLOCK_SIZE;
@@ -155,6 +159,8 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
                         sent_requests ++;
+                        fprintf(stderr, "Sent smaller REQUEST for piece %d, begin %d, length %d\n",
+                                ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
                     }
 
                     packet_length = 0;
@@ -165,12 +171,15 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     while (packet_length > 0) {
                         uint8_t payload;
                         if (!read_full(sock, b(payload))) goto end;
+                        /* fprintf(stderr, "bitfield payload %08b\n", payload); */
+                        // FIXME check if 1 << (8 - piece) is set in the right byte
                         packet_length -= 1;
                     }
                     packet_length = htonl(1);
                     if (!write_full(sock, b(packet_length))) goto end;
                     type = INTERESTED;
                     if (!write_full(sock, &type, 1)) goto end;
+                    fprintf(stderr, "Sent INTERESTED\n");
 
                     packet_length = 0;
                 }; break;
@@ -202,6 +211,8 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
                     // FIXME validate begin are in range
                     if (!read_full(sock, data + begin, packet_length)) goto end;
+                    fprintf(stderr, "Got request for piece %d, begin %d, length %d\n",
+                            index, begin, packet_length);
 
                     pieces_recieved ++;
                 }; break;
@@ -245,6 +256,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
     ret = EX_IOERR;
     if (!write_full(out_fd, data, len)) {
+        fprintf(stderr, "Could not write output file\n");
         goto end;
     }
 
