@@ -60,10 +60,19 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     BencodedValue *pieces = bencoded_dict_value((BencodedDict *)info->data, "pieces");
     if (!pieces || pieces->type != BYTES) goto end;
 
-    if ((unsigned)piece > pieces->size / SHA1_DIGEST_BYTE_LENGTH) {
+    size_t num_pieces = pieces->size / SHA1_DIGEST_BYTE_LENGTH;
+    if ((unsigned)piece >= num_pieces) {
         fprintf(stderr, "Piece number out of range\n");
         ret = EX_USAGE;
         goto end;
+    }
+    if ((num_pieces - 1) * piece_length->size > length->size) {
+        fprintf(stderr, "Overflow of length with piece size\n");
+        goto end;
+    }
+    size_t len = piece_length->size;
+    if ((unsigned)piece + 1 == num_pieces) {
+        len = length->size - (num_pieces - 1) * piece_length->size;
     }
 
     ret = EX_DATAERR;
@@ -95,7 +104,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     ret = EX_PROTOCOL;
     if (sock < 0) goto end;
 
-    uint8_t *data = malloc(piece_length->size);
+    uint8_t *data = malloc(len);
     if (data == NULL) {
         ret = EX_TEMPFAIL;
         goto end;
@@ -132,17 +141,16 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     };
 
                     packet_length = htonl(sizeof(payload) + 1);
-                    for (size_t idx = 0; idx < piece_length->size / BLOCK_SIZE; idx ++) {
-                        payload.begin = htonl(idx * BLOCK_SIZE);
+                    for (size_t idx = 0; idx < len / BLOCK_SIZE; idx ++) {
                         if (!write_full(sock, b(packet_length))) goto end;
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
                         sent_requests ++;
+                        payload.begin = htonl(ntohl(payload.begin) + ntohl(payload.length));
                     }
-                    payload.length = piece_length->size % BLOCK_SIZE;
+                    payload.length = len % BLOCK_SIZE;
                     if (payload.length != 0) {
-                        packet_length = htonl(payload.length);
-                        payload.begin = htonl(BLOCK_SIZE * (piece_length->size / BLOCK_SIZE));
+                        payload.length = htonl(payload.length);
                         if (!write_full(sock, b(packet_length))) goto end;
                         if (!write_full(sock, &type, 1)) goto end;
                         if (!write_full(sock, b(payload))) goto end;
@@ -213,7 +221,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
     // FIXME check hash
     uint8_t piece_hash[SHA1_DIGEST_BYTE_LENGTH];
-    if (!sha1_digest(data, piece_length->size, piece_hash)) {
+    if (!sha1_digest(data, len, piece_hash)) {
         goto end;
     }
 
@@ -236,7 +244,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
 
     ret = EX_IOERR;
-    if (!write_full(out_fd, data, piece_length->size)) {
+    if (!write_full(out_fd, data, len)) {
         goto end;
     }
 
