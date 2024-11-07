@@ -1,8 +1,3 @@
-
-// FIXME this should go into peers.h
-
-
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
