@@ -460,12 +460,12 @@ int magnet_handshake(int argc, char **argv) {
             if (isdigit(c1)) {
                 d1 = c1 - '0';
             } else {
-                d1 = tolower(c1) - 'a';
+                d1 = 10 + tolower(c1) - 'a';
             }
             if (isdigit(c2)) {
                 d2 = c2 - '0';
             } else {
-                d2 = tolower(c2) - 'a';
+                d2 = 10 + tolower(c2) - 'a';
             }
             if (d1 > 0xF || d2 > 0xF) {
                 fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
