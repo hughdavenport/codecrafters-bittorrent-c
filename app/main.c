@@ -23,12 +23,16 @@
 #define PEERS_IMPLEMENTATION
 #include "peers.h"
 
+// FIXME set up a proper define, or part of url.h
+#include "url-query.h"
+
 #ifdef BITTORRENT_RELEASE
 #define ERR_OUT(fmt, ...) \
         fprintf(stderr, (fmt), __VA_ARGS__)
-#else 
+#else
 #define ERR_OUT(fmt, ...) \
         fprintf(stderr, "%s:%d: " fmt, __FILE__, __LINE__, __VA_ARGS__)
+#define TODO(msg) ERR_OUT("%s\n", (msg))
 #endif
 
 int hash_file(const char *fname); // common.c
@@ -315,6 +319,79 @@ int download(int argc, char **argv) {
     return download_from_file(fname, output);
 }
 
+
+int magnet_parse(int argc, char **argv) {
+    if (argc == 0) return EX_USAGE;
+    URL url = {0};
+    if (!parse_url(argv[0], NULL, &url)) return EX_DATAERR;
+    if (strcmp(url.scheme, "magnet") != 0) {
+        fprintf(stderr, "Expected magnet url\n");
+        return EX_DATAERR;
+    }
+    URLQueryParameters parameters = {0};
+    int ret = EX_DATAERR;
+    if (!url_parse_query(&url, &parameters)) goto end;
+    URLQueryParameter *xt = url_query_parameter(&parameters, &cstr_to_byte_buffer("xt"));
+    URLQueryParameter *tr = url_query_parameter(&parameters, &cstr_to_byte_buffer("tr"));
+    if (!xt) {
+        fprintf(stderr, "Couldn't find `xt` query parameter.\n");
+        goto end;
+    }
+    if (xt->size != 1) {
+        fprintf(stderr, "Expected exactly 1 `xt` query parameter.\n");
+        goto end;
+    }
+
+    if (xt->value.size < 9) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%*s`\n",
+                (int)xt->value.size, xt->value.data);
+        goto end;
+    }
+    if (memcmp(xt->value.data, "urn:", 4) != 0) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%4s...`\n",
+                xt->value.data);
+        goto end;
+    }
+    char *hash_type = (char *)xt->value.data + 4;
+    if (memcmp(hash_type, "btih:", 5) != 0 && memcmp(hash_type, "btmh:", 5) != 0) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%9s...`\n",
+                xt->value.data);
+        goto end;
+    }
+    if (memcmp(hash_type, "btmh", 4) == 0) {
+        fprintf(stderr, "Don't support magnet v2 links, yet.\n");
+        goto end;
+    }
+
+    char *hash = (char *)xt->value.data + 9;
+    if (xt->value.size - 9 != 40) {
+        if (xt->value.size - 9 != 32) {
+            fprintf(stderr, "Expected a 40 char hex encoded or 32 character base32 encoded info hash in `xt`, but got length %ld\n",
+                    xt->value.size - 9);
+
+            goto end;
+        }
+        TODO("base32 encoded");
+        goto end;
+    } else {
+        // FIXME validate the hash is hex?
+    }
+
+    if (tr && (tr->size == 1 || (tr->size > 1 && tr->data))) {
+        if (tr->size > 1) {
+            TODO("multiple trackers");
+        } else {
+            printf("Tracker URL: %s\n", tr->value.data);
+        }
+    }
+    printf("Info Hash: %s\n", hash);
+
+    ret = EX_OK;
+end:
+    free_url_query_parameters(&parameters);
+    return ret;
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -349,6 +426,8 @@ int main(int argc, char* argv[]) {
         return download_piece(argc - 2, argv + 2);
     } else if (strcmp(command, "download") == 0) {
         return download(argc - 2, argv + 2);
+    } else if (strcmp(command, "magnet_parse") == 0) {
+        return magnet_parse(argc - 2, argv + 2);
     } else if (strcmp(command, "parse") == 0) {
         return parse(argc - 2, argv + 2);
     } else if (strcmp(command, "hash") == 0) {

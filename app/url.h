@@ -26,8 +26,8 @@ SOFTWARE.
 #define URL_H
 
 #define URL_H_VERSION_MAJOR 1
-#define URL_H_VERSION_MINOR 0
-#define URL_H_VERSION_PATCH 1
+#define URL_H_VERSION_MINOR 1
+#define URL_H_VERSION_PATCH 0
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -122,24 +122,25 @@ bool parse_url(char *start, char *end, URL *ret) {
         return false;
     }
     *p = 0;
-    if (strcmp(ret->scheme, "http") != 0) {
-        fprintf(stderr, "Unsupported scheme: %s\n", ret->scheme);
-        return false;
-    }
     if (p + 2 >= end || *(p + 1) != '/' || *(p + 2) != '/') {
         if (p + 2 >= end) {
             fprintf(stderr, "Invalid URL. Expected authority or path after scheme\n");
             return false;
         }
         ret->path = p + 1;
-        p = end;
+        p += 1;
     } else {
         ret->authority = p + 1;
         p += 3;
+        // At the start, this could be a "userpart", or host.
+        if (p < end) ret->user = ret->host = p;
+        if (strcmp(ret->scheme, "http") != 0 &&
+                strcmp(ret->scheme, "https") != 0) {
+            fprintf(stderr, "Unsupported scheme: %s\n", ret->scheme);
+            return false;
+        }
     }
 
-    // At the start, this could be a "userpart", or host.
-    if (p < end) ret->user = ret->host = p;
     while (p && p < end) {
         switch (*p) {
             case ':': {
@@ -240,10 +241,13 @@ bool parse_url(char *start, char *end, URL *ret) {
         return false;
     }
 
-    if (ret->port_num == 0) {
+    if (ret->authority != NULL && ret->port_num == 0) {
         if (strcmp(ret->scheme, "http") == 0) {
             ret->port = "80";
             ret->port_num = 80;
+        } else if (strcmp(ret->scheme, "https") == 0) {
+            ret->port = "443";
+            ret->port_num = 443;
         } else {
             fprintf(stderr, "Invalid URL. Could not find port\n");
             return false;
