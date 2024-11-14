@@ -87,7 +87,7 @@ int handshake_file(const char *fname, const char *peer) {
         ret = EX_PROTOCOL;
         goto end;
     }
-    uint8_t *peer_id = response + response[0] + 1 + RESERVED_SIZE + SHA1_DIGEST_BYTE_LENGTH;
+    uint8_t *peer_id = response + response[0] + 1 + EXTENSIONS_SIZE + SHA1_DIGEST_BYTE_LENGTH;
     printf("Peer ID: ");
     for (int idx = 0; idx < PEER_ID_SIZE; idx ++) {
         printf("%02x", peer_id[idx]);

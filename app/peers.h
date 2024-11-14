@@ -69,7 +69,7 @@ SOFTWARE.
 #include <stdbool.h>
 
 #define HANDSHAKE_SIZE 68
-#define RESERVED_SIZE 8
+#define EXTENSIONS_SIZE 8
 #define PEER_ID_SIZE 20
 
 // Enough space for xxx.xxx.xxx.xxx:xxxxx\0
@@ -89,6 +89,7 @@ int handshake_peer(const char *host, const char *port, const uint8_t info_hash[S
 #ifdef PEERS_IMPLEMENTATION
 
 #include <time.h>
+#include <assert.h>
 
 // 20 byte identifier. This is random data
 #define PEER_ID "AdtLtU86udGzzN5m9GDs"
@@ -219,6 +220,18 @@ int connect_peer(const char *host, const char *port) {
     return ret; // Either -1, or a file descriptor of a connected socket
 }
 
+    // FIXME in common.c, no good for header only
+bool write_full(int sock, void *data, size_t length);
+
+#define NUM_BITTORRENT_EXTENSIONS 8
+#define SET_BITTORRENT_EXTENSION(extensions, extension) do { \
+    static_assert((extension) < NUM_BITTORRENT_EXTENSIONS * 8); \
+    (extensions)[(extension) / NUM_BITTORRENT_EXTENSIONS] |= \
+        (1 << ((extension) % NUM_BITTORRENT_EXTENSIONS)); \
+} while (0);
+
+#define BITTORRENT_EXTENSION_PROTOCOL 44
+
 int handshake_peer(const char *host,
         const char *port,
         const uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
@@ -229,8 +242,19 @@ int handshake_peer(const char *host,
     int len = 0;
     len += dprintf(sock, "%c", (char)strlen(HANDSHAKE_PROTOCOL));
     len += dprintf(sock, HANDSHAKE_PROTOCOL);
-    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
-    len += dprintf(sock, "%c%c%c%c", 0, 0, 0, 0);
+    // Extensions
+    uint8_t extensions[NUM_BITTORRENT_EXTENSIONS] = {0};
+    SET_BITTORRENT_EXTENSION(extensions, BITTORRENT_EXTENSION_PROTOCOL);
+    // FIXME in common.c, no good for header only
+    if (write_full(sock, extensions, NUM_BITTORRENT_EXTENSIONS)) {
+        len += NUM_BITTORRENT_EXTENSIONS;
+    }
+    for (int idx = 0; idx < EXTENSIONS_SIZE; idx ++) {
+        if (extensions[idx] != 0) {
+            fprintf(stderr, "WARN: sent extension[%d] = 0x%02x\n", idx, extensions[idx]);
+        }
+    }
+
     for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
         len += dprintf(sock, "%c", info_hash[idx]);
     }
@@ -245,13 +269,13 @@ int handshake_peer(const char *host,
     if (response[0] != strlen(HANDSHAKE_PROTOCOL)) goto error;
     if (strncmp((char *)response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto error;
     uint8_t *reserved = response + response[0] + 1;
-    for (int idx = 0; idx < RESERVED_SIZE; idx ++) {
+    for (int idx = 0; idx < EXTENSIONS_SIZE; idx ++) {
         if (reserved[idx] != 0) {
-            fprintf(stderr, "WARN: reserved[%d] = 0x%02x\n", idx, reserved[idx]);
+            fprintf(stderr, "WARN: received reserved[%d] = 0x%02x\n", idx, reserved[idx]);
         }
     }
     // FIXME: work out what reserved bits mean what extension
-    if (memcmp(reserved + RESERVED_SIZE, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
+    if (memcmp(reserved + EXTENSIONS_SIZE, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
         fprintf(stderr, "Recieved invalid hash\n");
         goto error;
     }
