@@ -80,7 +80,7 @@ int download_from_file(char *fname, char *output) {
     // FIXME why not try all peers
     char peer[PEER_STRING_SIZE];
     ret = EX_UNAVAILABLE;
-    if (!random_peer(dict, info_hash, peer)) {
+    if (!random_peer_from_dict(dict, info_hash, peer)) {
         goto end;
     }
     fprintf(stderr, "Using peer %s\n", peer);
@@ -323,7 +323,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     // FIXME why not try all peers
     char peer[PEER_STRING_SIZE];
     ret = EX_UNAVAILABLE;
-    if (!random_peer(dict, info_hash, peer)) {
+    if (!random_peer_from_dict(dict, info_hash, peer)) {
         goto end;
     }
     fprintf(stderr, "Using peer %s\n", peer);

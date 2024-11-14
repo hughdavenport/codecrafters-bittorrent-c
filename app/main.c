@@ -64,7 +64,7 @@ int handshake_file(const char *fname, const char *peer) {
         // pick a random one, useful for testing
         char temp[PEER_STRING_SIZE];
         ret = EX_UNAVAILABLE;
-        if (!random_peer(dict, info_hash, temp)) {
+        if (!random_peer_from_dict(dict, info_hash, temp)) {
             goto end;
         }
         peer_str = strdup(temp);
@@ -392,6 +392,129 @@ end:
     return ret;
 }
 
+
+int magnet_handshake(int argc, char **argv) {
+    if (argc == 0) return EX_USAGE;
+    URL url = {0};
+    if (!parse_url(argv[0], NULL, &url)) return EX_DATAERR;
+    if (strcmp(url.scheme, "magnet") != 0) {
+        fprintf(stderr, "Expected magnet url\n");
+        return EX_DATAERR;
+    }
+    URLQueryParameters parameters = {0};
+    int ret = EX_DATAERR;
+    if (!url_parse_query(&url, &parameters)) goto end;
+    URLQueryParameter *xt = url_query_parameter(&parameters, &cstr_to_byte_buffer("xt"));
+    URLQueryParameter *tr = url_query_parameter(&parameters, &cstr_to_byte_buffer("tr"));
+    if (!xt) {
+        fprintf(stderr, "Couldn't find `xt` query parameter.\n");
+        goto end;
+    }
+    if (xt->size != 1) {
+        fprintf(stderr, "Expected exactly 1 `xt` query parameter.\n");
+        goto end;
+    }
+
+    if (xt->value.size < 9) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%*s`\n",
+                (int)xt->value.size, xt->value.data);
+        goto end;
+    }
+    if (memcmp(xt->value.data, "urn:", 4) != 0) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%4s...`\n",
+                xt->value.data);
+        goto end;
+    }
+    char *hash_type = (char *)xt->value.data + 4;
+    if (memcmp(hash_type, "btih:", 5) != 0 && memcmp(hash_type, "btmh:", 5) != 0) {
+        fprintf(stderr, "Expecting `xt` parameter to start with `urn:btih:` or `urn:btmh:`, but found `%9s...`\n",
+                xt->value.data);
+        goto end;
+    }
+    if (memcmp(hash_type, "btmh", 4) == 0) {
+        fprintf(stderr, "Don't support magnet v2 links, yet.\n");
+        goto end;
+    }
+
+    char *hash = (char *)xt->value.data + 9;
+    uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
+    if (xt->value.size - 9 != 2 * SHA1_DIGEST_BYTE_LENGTH) {
+        if (xt->value.size - 9 != 32) {
+            fprintf(stderr, "Expected a 40 char hex encoded or 32 character base32 encoded info hash in `xt`, but got length %ld\n",
+                    xt->value.size - 9);
+
+            goto end;
+        }
+        TODO("base32 encoded");
+        goto end;
+    } else {
+        for (size_t idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+            uint8_t c1 = hash[2*idx];
+            uint8_t c2 = hash[2*idx + 1];
+            if (!isxdigit(c1) || !isxdigit(c2)) {
+                fprintf(stderr, "Expected 40 char hex encoded info hash. Found non hex character at idx %zu\n",
+                        idx);
+                goto end;
+            }
+            uint8_t d1 = 0, d2 = 0;
+            if (isdigit(c1)) {
+                d1 = c1 - '0';
+            } else {
+                d1 = tolower(c1) - 'a';
+            }
+            if (isdigit(c2)) {
+                d2 = c2 - '0';
+            } else {
+                d2 = tolower(c2) - 'a';
+            }
+            if (d1 > 0xF || d2 > 0xF) {
+                fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
+                return EX_SOFTWARE;
+            }
+            info_hash[idx] = d1 << 4 | d2;
+        }
+    }
+
+    printf("Info Hash: ");
+    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
+        printf("%02x", info_hash[idx]);
+    }
+    printf("\n");
+
+    URL tracker;
+    if (tr && (tr->size == 1 || (tr->size > 1 && tr->data))) {
+        if (tr->size > 1) {
+            TODO("multiple trackers");
+        } else {
+            char *track = (char *)tr->value.data;
+            if (!parse_url(track, NULL, &tracker)) {
+                goto end;
+            }
+        }
+    }
+
+    BencodedValue *response = NULL;
+    size_t length = 0; // FIXME what should this be?
+    int tracker_ret = tracker_response_from_url(&tracker, 0, 0, length, info_hash, &response);
+    if (tracker_ret != EX_OK) {
+        ret = tracker_ret;
+        goto end;
+    }
+
+    char peer[PEER_STRING_SIZE];
+    ret = EX_UNAVAILABLE;
+    if (!random_peer_from_response(response, peer)) {
+        goto end;
+    }
+    fprintf(stderr, "Using peer %s\n", peer);
+
+    ret = EX_OK;
+end:
+    free_url_query_parameters(&parameters);
+    return ret;
+
+}
+
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -428,6 +551,8 @@ int main(int argc, char* argv[]) {
         return download(argc - 2, argv + 2);
     } else if (strcmp(command, "magnet_parse") == 0) {
         return magnet_parse(argc - 2, argv + 2);
+    } else if (strcmp(command, "magnet_handshake") == 0) {
+        return magnet_handshake(argc - 2, argv + 2);
     } else if (strcmp(command, "parse") == 0) {
         return parse(argc - 2, argv + 2);
     } else if (strcmp(command, "hash") == 0) {

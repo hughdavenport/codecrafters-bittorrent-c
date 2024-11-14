@@ -79,7 +79,8 @@ SOFTWARE.
 int peers_from_file(const char *torrent_file);
 
 // Pick a random peer after making a request to the tracker
-bool random_peer(BencodedDict *dict, uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH], char peer[PEER_STRING_SIZE]);
+bool random_peer_from_responses(BencodedValue *tracker_response, char peer[PEER_STRING_SIZE]);
+bool random_peer_from_dict(BencodedDict *dict, uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH], char peer[PEER_STRING_SIZE]);
 
 // Returns a socket connected to a peer immediately after a handshake has occurred
 int handshake_peer(const char *host, const char *port, const uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH], uint8_t response[HANDSHAKE_SIZE]);
@@ -119,7 +120,7 @@ int peers_from_file(const char *torrent_file) {
     }
 
     BencodedValue *response = NULL;
-    int tracker_ret = tracker_response(dict, info_hash, &response);
+    int tracker_ret = tracker_response_from_dict(dict, info_hash, &response);
     if (tracker_ret != EX_OK) {
         ret = tracker_ret;
         goto end;
@@ -152,20 +153,13 @@ end:
     return ret;
 }
 
-bool random_peer(BencodedDict *dict,
-        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+bool random_peer_from_response(BencodedValue *tracker_response,
         char peer[PEER_STRING_SIZE]) {
-    bool ret = false;
-    BencodedValue *response = NULL;
-    int tracker_ret = tracker_response(dict, info_hash, &response);
-    if (tracker_ret != EX_OK) {
-        ret = tracker_ret;
-        goto end;
-    }
-    if (!response || response->type != DICT) goto end;
-    BencodedValue *peers = bencoded_dict_value((BencodedDict *)response->data, "peers");
-    if (peers->type != BYTES) goto end;
-    if (peers->size % 6 != 0) goto end;
+    if (!tracker_response || tracker_response->type != DICT) return false;
+    BencodedValue *peers = bencoded_dict_value((BencodedDict *)tracker_response->data, "peers");
+    if (peers == NULL) return false;
+    if (peers->type != BYTES) return false;
+    if (peers->size % 6 != 0) return false;
 
     srand(time(NULL));
     int idx = random() % (peers->size / 6);
@@ -178,10 +172,22 @@ bool random_peer(BencodedDict *dict,
             ((uint8_t *)peers->data)[6 * idx + 5]) > PEER_STRING_SIZE) {
         // FIXME This may signify IPv6
         fprintf(stderr, "%s:%d: UNREACHABLE", __FILE__, __LINE__);
-        goto end;
+        return false;
     }
 
-    ret = true;
+    return true;
+}
+
+bool random_peer_from_dict(BencodedDict *dict,
+        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+        char peer[PEER_STRING_SIZE]) {
+    bool ret = false;
+    BencodedValue *response = NULL;
+    int tracker_ret = tracker_response_from_dict(dict, info_hash, &response);
+    if (tracker_ret != EX_OK) {
+        goto end;
+    }
+    ret = random_peer_from_response(response, peer);
 end:
     if (response) free_bencoded_value(response);
     return ret;

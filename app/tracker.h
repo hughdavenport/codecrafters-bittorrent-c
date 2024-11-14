@@ -50,7 +50,11 @@ SOFTWARE.
 #include <sysexits.h>
 
 // Returns peers after making a request to the tracker
-int tracker_response(BencodedDict *dict,
+int tracker_response_from_url(URL *url,
+        size_t uploaded, size_t downloaded, size_t length,
+        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+        BencodedValue **response);
+int tracker_response_from_dict(BencodedDict *dict,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
         BencodedValue **response);
 
@@ -137,35 +141,19 @@ bool add_query_string(URL *url,
     return true;
 }
 
-int tracker_response(BencodedDict *dict,
+int tracker_response_from_url(URL *url,
+        size_t uploaded, size_t downloaded, size_t length,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
         BencodedValue **response) {
-    int ret = EX_DATAERR;
-    BencodedValue *info = bencoded_dict_value(dict, "info");
-    if (!info) goto end;
-    if (info->type != DICT) goto end;
-    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
-    if (!length || length->type != INTEGER) goto end;
 
-    BencodedValue *announce = bencoded_dict_value(dict, "announce");
-    if (!announce) goto end;
-    if (announce->type != BYTES) goto end;
-
-    URL url = {0};
-    if (!parse_url((char *)announce->data,
-                (char *)announce->data + announce->size,
-                &url)) {
-        goto end;
-    }
-
-    ret = EX_UNAVAILABLE;
-    if (!add_query_string(&url, info_hash, 0, 0, length->size)) {
+    int ret = EX_UNAVAILABLE;
+    if (!add_query_string(url, info_hash, uploaded, downloaded, length)) {
         goto end;
     }
 
     ret = EX_UNAVAILABLE;
     HttpResponse http_response = {0};
-    if (!send_http_request(&url, NULL, NULL, &http_response)) {
+    if (!send_http_request(url, NULL, NULL, &http_response)) {
         goto end;
     }
 
@@ -187,10 +175,34 @@ int tracker_response(BencodedDict *dict,
     *response = tmp;
     ret = EX_OK;
 end:
-    free(url.query); // Allocated in add_query_string
+    free(url->query); // Allocated in add_query_string
     free_http_response(&http_response);
     return ret;
 }
+
+int tracker_response_from_dict(BencodedDict *dict,
+        uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
+        BencodedValue **response) {
+    BencodedValue *info = bencoded_dict_value(dict, "info");
+    if (!info) return EX_DATAERR;
+    if (info->type != DICT) return EX_DATAERR;
+    BencodedValue *length = bencoded_dict_value((BencodedDict *)info->data, "length");
+    if (!length || length->type != INTEGER) return EX_DATAERR;
+
+    BencodedValue *announce = bencoded_dict_value(dict, "announce");
+    if (!announce) return EX_DATAERR;
+    if (announce->type != BYTES) return EX_DATAERR;
+
+    URL url = {0};
+    if (!parse_url((char *)announce->data,
+                (char *)announce->data + announce->size,
+                &url)) {
+        return EX_DATAERR;
+    }
+
+    return tracker_response_from_url(&url, 0, 0, length->size, info_hash, response);
+}
+
 
 #endif // TRACKER_IMPLEMENTATION
 
