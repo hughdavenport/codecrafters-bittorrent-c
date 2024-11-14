@@ -475,12 +475,6 @@ int magnet_handshake(int argc, char **argv) {
         }
     }
 
-    printf("Info Hash: ");
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        printf("%02x", info_hash[idx]);
-    }
-    printf("\n");
-
     URL tracker;
     if (tr && (tr->size == 1 || (tr->size > 1 && tr->data))) {
         if (tr->size > 1) {
@@ -493,20 +487,39 @@ int magnet_handshake(int argc, char **argv) {
         }
     }
 
-    BencodedValue *response = NULL;
-    size_t length = 0; // FIXME what should this be?
-    int tracker_ret = tracker_response_from_url(&tracker, 0, 0, length, info_hash, &response);
+    ret = EX_UNAVAILABLE;
+    BencodedValue *tracker_response = NULL;
+    size_t length = 1; // Must be > 0 to get any peers. Exact number not known in advance
+    int tracker_ret = tracker_response_from_url(&tracker, 0, 0, length, info_hash, &tracker_response);
     if (tracker_ret != EX_OK) {
         ret = tracker_ret;
         goto end;
     }
 
     char peer[PEER_STRING_SIZE];
-    ret = EX_UNAVAILABLE;
-    if (!random_peer_from_response(response, peer)) {
+    if (!random_peer_from_response(tracker_response, peer)) {
         goto end;
     }
     fprintf(stderr, "Using peer %s\n", peer);
+
+    char *colon = index(peer, ':');
+    if (colon == NULL) goto end;
+    *colon = 0;
+    ret = EX_UNAVAILABLE;
+    uint8_t response[HANDSHAKE_SIZE];
+    int sock = handshake_peer(peer, colon + 1, info_hash, response);
+    *colon = ':';
+    if (sock == -1) goto end;
+    if (sock < 0) {
+        ret = EX_PROTOCOL;
+        goto end;
+    }
+    uint8_t *peer_id = response + response[0] + 1 + EXTENSIONS_SIZE + SHA1_DIGEST_BYTE_LENGTH;
+    printf("Peer ID: ");
+    for (int idx = 0; idx < PEER_ID_SIZE; idx ++) {
+        printf("%02x", peer_id[idx]);
+    }
+    printf("\n");
 
     ret = EX_OK;
 end:
