@@ -1,4 +1,5 @@
-#include <string.h>
+#ifndef URL_QUERY_H
+#define URL_QUERY_H
 
 typedef struct {
     uint8_t *data;
@@ -23,16 +24,6 @@ typedef struct {
         free((buf)->data); \
         (buf)->data = NULL; \
     } \
-}
-
-bool byte_buffer_copy(ByteBuffer *dest, ByteBuffer *src) {
-    dest->data = malloc(src->size + 1);
-    if (dest->data == NULL) return false;
-    dest->size = src->size;
-    dest->capacity = src->size;
-    memcpy(dest->data, src->data, src->size);
-    dest->data[src->size] = 0;
-    return true;
 }
 
 #define cstr_to_byte_buffer(str) (ByteBuffer){ \
@@ -66,6 +57,23 @@ typedef struct {
 bool url_parse_query(const URL *url, URLQueryParameters *parameters);
 URLQueryParameter *url_query_parameter(const URLQueryParameters *parameters, const ByteBuffer *name);
 void free_url_query_parameters(const URLQueryParameters *parameters);
+bool byte_buffer_copy(ByteBuffer *dest, ByteBuffer *src);
+
+#endif
+
+#ifdef URL_QUERY_IMPLEMENTATION
+#include <string.h>
+#include <ctype.h>
+
+bool byte_buffer_copy(ByteBuffer *dest, ByteBuffer *src) {
+    dest->data = malloc(src->size + 1);
+    if (dest->data == NULL) return false;
+    dest->size = src->size;
+    dest->capacity = src->size;
+    memcpy(dest->data, src->data, src->size);
+    dest->data[src->size] = 0;
+    return true;
+}
 
 bool url_parse_query(const URL *url, URLQueryParameters *parameters) {
     if (url == NULL || parameters == NULL) return false;
@@ -256,4 +264,4 @@ void free_url_query_parameters(const URLQueryParameters *parameters) {
     }
     free(parameters->data);
 }
-
+#endif

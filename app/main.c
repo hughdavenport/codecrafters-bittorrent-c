@@ -23,8 +23,11 @@
 #define PEERS_IMPLEMENTATION
 #include "peers.h"
 
-// FIXME set up a proper define, or part of url.h
+/* #define URL_QUERY_IMPLEMENTATION */
 #include "url-query.h"
+
+#define LOG_IMPLEMENTATION
+#include "log.h"
 
 #ifdef BITTORRENT_RELEASE
 #define ERR_OUT(fmt, ...) \
