@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
 
 #include "sha1.h"
 #include "url.h"
@@ -222,7 +223,7 @@ typedef struct {
     size_t idx;
 } PeerConnection;
 
-TorrentFile *parse_magnet_url_job(const char *data) {
+TorrentFile *parse_magnet_url(const char *data) {
     ELOG("%s)\n", data);
     char *magnet_url = strdup((char *)data);
     if (magnet_url == NULL) return NULL;
@@ -340,7 +341,7 @@ end:
     return ret;
 }
 
-TorrentFile *parse_torrent_file_job(const char *torrent_file) {
+TorrentFile *parse_torrent_file(const char *torrent_file) {
     ELOG("\"%s\"\n", torrent_file);
     bool success = false;
     TorrentFile *ret = NULL;
@@ -413,7 +414,16 @@ end:
     return ret;
 }
 
-bool get_peers_job(TorrentFile *torrent) {
+TorrentFile *parse_torrent_file_or_magnet(const char *data) {
+    if (data == NULL) return NULL;
+    if (strncmp(data, "magnet:", strlen("magnet")) == 0) {
+        return parse_magnet_url(data);
+    } else {
+        return parse_torrent_file(data);
+    }
+}
+
+bool get_peers(TorrentFile *torrent) {
     ELOG("(%p)\n", (void *)torrent);
     if (torrent->tracker == NULL) goto err;
     if (pthread_rwlock_wrlock(&torrent->lock) != 0) {
@@ -423,18 +433,22 @@ bool get_peers_job(TorrentFile *torrent) {
     if (torrent->peers) goto unlock; // Already done
 
     URL tracker = {0};
-    parse_url(torrent->tracker, NULL, &tracker);
+    char *tr = strdup(torrent->tracker);
+    if (tr == NULL) UNREACHABLE();
+    parse_url(tr, NULL, &tracker);
     BencodedValue *tracker_response = NULL;
     size_t length = torrent->length == 0 ? 1 : torrent->length; // Must be > 0 to get any peers. Exact number not known in advance
     if (tracker_response_from_url(&tracker, 0, 0, length,
                 torrent->info_hash, &tracker_response) != EX_OK) {
-        goto err;
+        free(tr);
+        goto unlock;
     }
+    free(tr);
     BencodedValue *peers = bencoded_dict_value((BencodedDict *)tracker_response->data, "peers");
-    if (!peers || peers->type != BYTES) goto err;
-    if (peers->size % 6 != 0) goto err;
+    if (!peers || peers->type != BYTES) goto unlock;
+    if (peers->size % 6 != 0) goto unlock;
     torrent->peers = calloc(peers->size, sizeof(Peer));
-    if (torrent->peers == NULL) goto err;
+    if (torrent->peers == NULL) goto unlock;
     torrent->num_peers = peers->size / 6;
 
     for (size_t idx = 0; (idx + 1) * 6 <= peers->size; idx ++) {
@@ -466,15 +480,14 @@ err:
     return NULL;
 }
 
-void *get_handshake_job(JobList *jobs, void *data) {
-    ELOG("(%p, %p)\n", (void *)jobs, data);
-    if (data == NULL) return NULL;
-    PeerConnection *peer = (PeerConnection *)data;
-    if (peer->torrent == NULL) return NULL;
+bool get_handshake(PeerConnection *peer) {
+    ELOG("(%p)\n", (void *)peer);
+    bool ret = false;
+    if (peer->torrent == NULL) return -1;
     TorrentFile *torrent = peer->torrent;
     if (pthread_rwlock_rdlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_rdlock() error");
-        return NULL;
+        return false;
     }
     if (torrent->peers == NULL) {
         ELOG("No peers, returning\n");
@@ -501,26 +514,28 @@ void *get_handshake_job(JobList *jobs, void *data) {
         memcpy(peer->peer_id,
                 response + response[0] + 1 + RESERVED_SIZE + SHA1_DIGEST_BYTE_LENGTH,
                 PEER_ID_SIZE);
-        return peer;
+        ret = true;
+        goto unlock;
     }
 
 unlock:
     if (pthread_rwlock_unlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_unlock() error");
-        return NULL;
+        return false;
     }
 
-    return NULL;
+    return ret;
 }
 
-bool info_torrent_file(JobList *jobs, void *data) {
-    ELOG("(%p, %p)\n", (void *)jobs, data);
-    if (data == NULL) return false;
-    bool ret = false; // Quit after this one
-    TorrentFile *torrent = (TorrentFile *)data;
+void info_torrent_file(const char *data) {
+    ELOG("(%s)\n", data);
+    if (data == NULL) return;
+    TorrentFile *torrent = parse_torrent_file_or_magnet(data);
+    if (torrent == NULL) return;
+    if (torrent->peers == NULL && !get_peers(torrent)) return;
     if (pthread_rwlock_rdlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_rdlock() error");
-        return ret;
+        return;
     }
 
     if (pthread_mutex_lock(&print_lock) != 0) {
@@ -528,6 +543,7 @@ bool info_torrent_file(JobList *jobs, void *data) {
         goto unlock_torrent;
     }
 
+    ELOG("tr=%s\n", torrent->tracker);
     printf("Tracker URL: %s\n", torrent->tracker);
     if (torrent->length > 0) printf("Length: %zu\n", torrent->length);
     printf("Info Hash: ");
@@ -546,36 +562,40 @@ bool info_torrent_file(JobList *jobs, void *data) {
         }
     }
 
-/* unlock: */
     if (pthread_mutex_unlock(&print_lock) != 0) {
         perror("pthread_mutex_unlock() error");
-        ret = false;
     }
 unlock_torrent:
     if (pthread_rwlock_unlock(&torrent->lock) != 0) {
-        perror("pthread_rwlock_unlock() error");
-        return false;
+        perror("pthread_rdlock_unlock() error");
     }
-
-    return ret;
 }
 
-bool info_handshake(JobList *jobs, void *data) {
-    ELOG("(%p, %p)\n", (void *)jobs, data);
-    if (data == NULL) return false;
-    PeerConnection *peer = (PeerConnection *)data;
-    if (peer == NULL) return false;
+void info_handshake_from_connection(PeerConnection *peer) {
+    if (peer == NULL) return;
+    TorrentFile *torrent = peer->torrent;
+    if (torrent == NULL) return;
+    if (torrent->peers == NULL) if (!get_peers(torrent)) return;
+    if (peer->idx >= torrent->num_peers) {
+        ERROR("Peer index %zu out of range of %zu",
+                peer->idx, torrent->num_peers);
+        return;
+    }
+    char *host = torrent->peers[peer->idx].host;
+    char *port = torrent->peers[peer->idx].port;
+#define PEER_LOG(fmt, ...) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd, ##__VA_ARGS__);
     if (peer->fd == -1 || peer->fd == 0) {
-        TorrentFile *torrent = peer->torrent;
-        char *host = torrent->peers[peer->idx].host;
-        char *port = torrent->peers[peer->idx].port;
-        ELOG("No peer connection for %s:%s\n", host, port);
-        return false;
+        PEER_LOG("Connecting and handshaking");
+        if (!get_handshake(peer)) {
+            // FIXME handle retries
+            ERROR("Failed to connect and handshake");
+            return;
+        }
     }
 
     if (pthread_mutex_lock(&print_lock) != 0) {
         perror("pthread_mutex_lock() error");
-        return false;
+        goto close;
     }
 
     printf("Peer ID: ");
@@ -586,47 +606,58 @@ bool info_handshake(JobList *jobs, void *data) {
 
     if (pthread_mutex_unlock(&print_lock) != 0) {
         perror("pthread_mutex_lock() error");
-        return false;
     }
-    return false;
+close:
+    if (peer->fd > 0) {
+        close(peer->fd);
+        peer->fd = -1;
+    }
 }
 
-bool info_peers(JobList *jobs, void *data) {
-    ELOG("(%p, %p)\n", (void *)jobs, data);
-    if (data == NULL) return false;
-    bool ret = false; // Quit after this one
-    TorrentFile *torrent = (TorrentFile *)data;
+void info_handshake(const char *data, size_t peer) {
+    ELOG("(%s, %zu)\n", data, peer);
+    if (data == NULL) return;
+    TorrentFile *torrent = parse_torrent_file_or_magnet(data);
+    if (torrent == NULL) return;
+    if (!get_peers(torrent)) return;
+    PeerConnection connection = {
+        .idx = peer,
+        .torrent = torrent,
+    };
+    info_handshake_from_connection(&connection);
+}
+
+void info_peers(const char *data) {
+    ELOG("(%p)\n", data);
+    if (data == NULL) return;
+    TorrentFile *torrent = parse_torrent_file_or_magnet(data);
+    if (torrent == NULL) return;
+    if (!get_peers(torrent)) return;
     if (pthread_rwlock_rdlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_rdlock() error");
-        return false;
+        return;
     }
 
     if (torrent->num_peers == 0 || torrent->peers == NULL) {
         ELOG("No peers\n");
-        goto unlock;
+        goto unlock_torrent;
     }
 
     if (pthread_mutex_lock(&print_lock) != 0) {
         perror("pthread_mutex_lock() error");
-        ret = false;
         goto unlock_torrent;
     }
     for (size_t idx = 0; idx < torrent->num_peers; idx ++) {
         printf("%s:%s\n", torrent->peers[idx].host, torrent->peers[idx].port);
     }
 
-unlock:
     if (pthread_mutex_unlock(&print_lock) != 0) {
         perror("pthread_mutex_unlock() error");
-        ret = false;
     }
 unlock_torrent:
-    if (pthread_rwlock_unlock(&torrent->lock) != 0) {
-        perror("pthread_rwlock_unlock() error");
-        ret = false;
+    if (pthread_rwlock_rdlock(&torrent->lock) != 0) {
+        perror("pthread_rwlock_rdlock() error");
     }
-
-    return ret;
 }
 
 #include "io.h"
@@ -667,16 +698,22 @@ void *handle_connection(void *data) {
     if (data == NULL) return NULL;
     PeerConnection *peer = (PeerConnection *)data;
     TorrentFile *torrent = peer->torrent;
+    if (torrent->peers == NULL) if (!get_peers(torrent)) return NULL;
+    if (peer->idx >= torrent->num_peers) {
+        ERROR("Peer index %zu out of range of %zu",
+                peer->idx, torrent->num_peers);
+        return NULL;
+    }
     char *host = torrent->peers[peer->idx].host;
     char *port = torrent->peers[peer->idx].port;
 #define PEER_LOG(fmt, ...) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd, ##__VA_ARGS__);
-    uint8_t response[HANDSHAKE_SIZE];
-    PEER_LOG("Connecting and handshaking");
-    peer->fd = handshake_peer(host, port, torrent->info_hash, response);
-    if (peer->fd == -1) {
-        // FIXME handle retries
-        ERROR("Failed to connect and handshake");
-        return NULL;
+    if (peer->fd == -1 || peer->fd == 0) {
+        PEER_LOG("Connecting and handshaking");
+        if (!get_handshake(peer)) {
+            // FIXME handle retries
+            ERROR("Failed to connect and handshake");
+            return NULL;
+        }
     }
 
     size_t requests = 0;
@@ -861,24 +898,18 @@ end:
     return NULL;
 }
 
-bool download_torrent_from_input_job(JobList *jobs, const char *data) {
-    ELOG("(%p, %p)\n", (void *)jobs, data);
-    bool ret = false;
+void download_torrent_from_input(const char *data) {
+    ELOG("(%p)\n", data);
     FILE *out = NULL;
     pthread_t *threads = NULL;
     PeerConnection *peers = NULL;
     RequestPayload *requests = NULL;
-    if (jobs == NULL || data == NULL) return false;
+    if (data == NULL) return;
     
-    TorrentFile *torrent = NULL;
-    if (strncmp(data, "magnet:", strlen("magnet")) == 0) {
-        torrent = parse_magnet_url_job(data);
-    } else {
-        torrent = parse_torrent_file_job(data);
-    }
-    if (torrent == NULL) return false;
+    TorrentFile *torrent = parse_torrent_file_or_magnet(data);
+    if (torrent == NULL) return;
 
-    if (!get_peers_job(torrent)) goto end;
+    if (!get_peers(torrent)) goto end;
     // FIXME torrent->length is not known if magnet until after extension handshake
     //          perhaps if magnet route we should grab a random peer and handshake?
 
@@ -981,10 +1012,11 @@ bool download_torrent_from_input_job(JobList *jobs, const char *data) {
         goto end;
     }
 
-    ret = true;
+    ELOG("Success\n");
+
 end:
-    ELOG(" -> %s\n", ret ? "true" : "false");
-    if (!ret) {
+    ELOG("returning\n");
+    if (torrent) {
         free(torrent->tracker);
         free(torrent->name);
         free(torrent->data);
@@ -994,8 +1026,6 @@ end:
     if (threads) free(threads);
     if (requests) free(requests);
     if (out) fclose(out);
-
-    return ret;
 }
 
 int job_test() {
@@ -1004,9 +1034,13 @@ int job_test() {
     JobList jobs = {0};
     job_list_init(&jobs);
 
-    download_torrent_from_input_job(&jobs, "sample.torrent");
-    download_torrent_from_input_job(&jobs, "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce");
-
+    info_peers("sample.torrent");
+    info_handshake("sample.torrent", 0);
+    info_handshake("sample.torrent", 1);
+    info_handshake("sample.torrent", 2);
+    info_torrent_file("sample.torrent");
+    download_torrent_from_input("sample.torrent");
+    /* download_torrent_from_input("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"); */
 
     job_list_free(&jobs);
 
