@@ -23,7 +23,7 @@
 #define PEERS_IMPLEMENTATION
 #include "peers.h"
 
-/* #define URL_QUERY_IMPLEMENTATION */
+#define URL_QUERY_IMPLEMENTATION
 #include "url-query.h"
 
 #define LOG_IMPLEMENTATION
@@ -531,12 +531,14 @@ end:
 
 }
 
+int job_test();
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
  	setbuf(stderr, NULL);
 
     if (argc < 3) {
+    return job_test();
         fprintf(stderr, "Usage: your_bittorrent.sh <command> <args>\n");
         fprintf(stderr, "Available subcommands:\n");
         // FIXME do this better
