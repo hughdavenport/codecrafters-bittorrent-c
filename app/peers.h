@@ -79,7 +79,7 @@ SOFTWARE.
 int peers_from_file(const char *torrent_file);
 
 // Pick a random peer after making a request to the tracker
-bool random_peer_from_responses(BencodedValue *tracker_response, char peer[PEER_STRING_SIZE]);
+bool random_peer_from_response(BencodedValue *tracker_response, char peer[PEER_STRING_SIZE]);
 bool random_peer_from_dict(BencodedDict *dict, uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH], char peer[PEER_STRING_SIZE]);
 
 // Returns a socket connected to a peer immediately after a handshake has occurred
