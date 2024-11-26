@@ -226,8 +226,7 @@ int connect_peer(const char *host, const char *port) {
     return ret; // Either -1, or a file descriptor of a connected socket
 }
 
-    // FIXME in common.c, no good for header only
-bool write_full(int sock, void *data, size_t length);
+#include "io.h"
 
 #define NUM_BITTORRENT_EXTENSIONS 8
 #define SET_BITTORRENT_EXTENSION(extensions, extension) do { \
@@ -250,14 +249,16 @@ int handshake_peer(const char *host,
     len += dprintf(sock, HANDSHAKE_PROTOCOL);
     // Extensions
     uint8_t extensions[NUM_BITTORRENT_EXTENSIONS] = {0};
+
     SET_BITTORRENT_EXTENSION(extensions, BITTORRENT_EXTENSION_PROTOCOL);
-    // FIXME in common.c, no good for header only
-    if (write_full(sock, extensions, NUM_BITTORRENT_EXTENSIONS)) {
+
+    // FIXME in io.h, no good for header only
+    if (write_full_length(sock, extensions, NUM_BITTORRENT_EXTENSIONS)) {
         len += NUM_BITTORRENT_EXTENSIONS;
     }
     for (int idx = 0; idx < EXTENSIONS_SIZE; idx ++) {
         if (extensions[idx] != 0) {
-            fprintf(stderr, "WARN: sent extension[%d] = 0x%02x\n", idx, extensions[idx]);
+            WARNING("sent extension[%d] = 0x%02x", idx, extensions[idx]);
         }
     }
 
@@ -265,30 +266,30 @@ int handshake_peer(const char *host,
         len += dprintf(sock, "%c", info_hash[idx]);
     }
     len += dprintf(sock, "%s", PEER_ID);
-    fprintf(stderr, "wrote %d bytes.\n", len);
+    ELOG("wrote %d bytes to %d.\n", len, sock);
     if (len != HANDSHAKE_SIZE) goto error;
 
-    len = read(sock, response, HANDSHAKE_SIZE);
-    fprintf(stderr, "read %d bytes.\n", len);
-    if (len != HANDSHAKE_SIZE) goto error;
+    if (!read_full_length(sock, response, HANDSHAKE_SIZE)) goto error;
+    ELOG("read %d bytes from %d.\n", len, sock);
 
     if (response[0] != strlen(HANDSHAKE_PROTOCOL)) goto error;
     if (strncmp((char *)response + 1, HANDSHAKE_PROTOCOL, response[0]) != 0) goto error;
     uint8_t *reserved = response + response[0] + 1;
     for (int idx = 0; idx < EXTENSIONS_SIZE; idx ++) {
         if (reserved[idx] != 0) {
-            fprintf(stderr, "WARN: received reserved[%d] = 0x%02x\n", idx, reserved[idx]);
+            WARNING("received reserved[%d] = 0x%02x", idx, reserved[idx]);
         }
     }
     // FIXME: work out what reserved bits mean what extension
     if (memcmp(reserved + EXTENSIONS_SIZE, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
-        fprintf(stderr, "Recieved invalid hash\n");
+        ERROR("Recieved invalid hash");
         goto error;
     }
 
     return sock;
 
 error:
+    if (sock != -1) close(sock);
     return -2;
 }
 

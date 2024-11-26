@@ -14,9 +14,7 @@
 #include "sha1.h"
 #include "peers.h"
 
-// in common.c
-bool read_full(int sock, void *data, size_t length);
-bool write_full(int sock, void *data, size_t length);
+#include "io.h"
 
 // 2^14 (16 kiB)
 #define BLOCK_SIZE 16384
@@ -103,13 +101,12 @@ int download_from_file(char *fname, char *output) {
     size_t sent_requests = 0;
     size_t pieces_recieved = 0;
     while (sent_requests == 0 || pieces_recieved < sent_requests) {
-#define b(var) &var, sizeof(var)
-        if (!read_full(sock, b(packet_length))) goto end;
+        if (!read_full(sock, packet_length)) goto end;
         packet_length = ntohl(packet_length);
         fprintf(stderr, "packet length = %u\n", packet_length);
         if (packet_length > 0) {
             PeerMessageType type = CHOKE;
-            if (!read_full(sock, &type, 1)) goto end;
+            if (!read_full_length(sock, &type, 1)) goto end;
             packet_length -= 1;
             switch (type) {
                 case UNCHOKE: {
@@ -118,7 +115,7 @@ int download_from_file(char *fname, char *output) {
                     if (packet_length > 0) fprintf(stderr, "unexpected payload\n");
                     while (packet_length > 0) {
                         uint8_t payload;
-                        if (!read_full(sock, b(payload))) goto end;
+                        if (!read_full(sock, payload)) goto end;
                         packet_length -= 1;
                     }
 
@@ -136,9 +133,9 @@ int download_from_file(char *fname, char *output) {
 
                         packet_length = htonl(sizeof(payload) + 1);
                         for (size_t idx = 0; idx < len / BLOCK_SIZE; idx ++) {
-                            if (!write_full(sock, b(packet_length))) goto end;
-                            if (!write_full(sock, &type, 1)) goto end;
-                            if (!write_full(sock, b(payload))) goto end;
+                            if (!write_full(sock, packet_length)) goto end;
+                            if (!write_full_length(sock, &type, 1)) goto end;
+                            if (!write_full(sock, payload)) goto end;
                             sent_requests ++;
                             fprintf(stderr, "Sent REQUEST for piece %d, begin %d, length %d\n",
                                     ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
@@ -147,9 +144,9 @@ int download_from_file(char *fname, char *output) {
                         payload.length = len % BLOCK_SIZE;
                         if (payload.length != 0) {
                             payload.length = htonl(payload.length);
-                            if (!write_full(sock, b(packet_length))) goto end;
-                            if (!write_full(sock, &type, 1)) goto end;
-                            if (!write_full(sock, b(payload))) goto end;
+                            if (!write_full(sock, packet_length)) goto end;
+                            if (!write_full_length(sock, &type, 1)) goto end;
+                            if (!write_full(sock, payload)) goto end;
                             sent_requests ++;
                             fprintf(stderr, "Sent smaller REQUEST for piece %d, begin %d, length %d\n",
                                     ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
@@ -163,15 +160,15 @@ int download_from_file(char *fname, char *output) {
                     fprintf(stderr, "got BITFIELD\n");
                     while (packet_length > 0) {
                         uint8_t payload;
-                        if (!read_full(sock, b(payload))) goto end;
+                        if (!read_full(sock, payload)) goto end;
                         /* fprintf(stderr, "bitfield payload %08b\n", payload); */
                         // FIXME check if 1 << (8 - piece) is set in the right byte
                         packet_length -= 1;
                     }
                     packet_length = htonl(1);
-                    if (!write_full(sock, b(packet_length))) goto end;
+                    if (!write_full(sock, packet_length)) goto end;
                     type = INTERESTED;
-                    if (!write_full(sock, &type, 1)) goto end;
+                    if (!write_full_length(sock, &type, 1)) goto end;
                     fprintf(stderr, "Sent INTERESTED\n");
 
                     packet_length = 0;
@@ -190,9 +187,9 @@ int download_from_file(char *fname, char *output) {
                     }
 
                     uint32_t piece, begin;
-                    if (!read_full(sock, b(piece))) goto end;
+                    if (!read_full(sock, piece)) goto end;
                     piece = ntohl(piece);
-                    if (!read_full(sock, b(begin))) goto end;
+                    if (!read_full(sock, begin)) goto end;
                     begin = ntohl(begin);
                     packet_length -= sizeof(uint32_t) * 2;
 
@@ -205,7 +202,7 @@ int download_from_file(char *fname, char *output) {
                     }
 
                     // FIXME validate begin are in range
-                    if (!read_full(sock, data + begin, packet_length)) goto end;
+                    if (!read_full_length(sock, data + begin, packet_length)) goto end;
                     fprintf(stderr, "Got request for piece %d, begin %d, length %d\n",
                             piece, begin, packet_length);
 
@@ -256,7 +253,7 @@ int download_from_file(char *fname, char *output) {
     }
 
     ret = EX_IOERR;
-    if (!write_full(out_fd, full_data, length->size)) {
+    if (!write_full_length(out_fd, full_data, length->size)) {
         fprintf(stderr, "Could not write output file\n");
         goto end;
     }
@@ -352,13 +349,12 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     size_t sent_requests = 0;
     size_t pieces_recieved = 0;
     while (sent_requests == 0 || pieces_recieved < sent_requests) {
-#define b(var) &var, sizeof(var)
-        if (!read_full(sock, b(packet_length))) goto end;
+        if (!read_full(sock, packet_length)) goto end;
         packet_length = ntohl(packet_length);
         fprintf(stderr, "packet length = %u\n", packet_length);
         if (packet_length > 0) {
             PeerMessageType type = CHOKE;
-            if (!read_full(sock, &type, 1)) goto end;
+            if (!read_full_length(sock, &type, 1)) goto end;
             packet_length -= 1;
             switch (type) {
                 case UNCHOKE: {
@@ -367,7 +363,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     if (packet_length > 0) fprintf(stderr, "unexpected payload\n");
                     while (packet_length > 0) {
                         uint8_t payload;
-                        if (!read_full(sock, b(payload))) goto end;
+                        if (!read_full(sock, payload)) goto end;
                         packet_length -= 1;
                     }
 
@@ -380,9 +376,9 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
                     packet_length = htonl(sizeof(payload) + 1);
                     for (size_t idx = 0; idx < len / BLOCK_SIZE; idx ++) {
-                        if (!write_full(sock, b(packet_length))) goto end;
-                        if (!write_full(sock, &type, 1)) goto end;
-                        if (!write_full(sock, b(payload))) goto end;
+                        if (!write_full(sock, packet_length)) goto end;
+                        if (!write_full_length(sock, &type, 1)) goto end;
+                        if (!write_full(sock, payload)) goto end;
                         sent_requests ++;
                         fprintf(stderr, "Sent REQUEST for piece %d, begin %d, length %d\n",
                                 ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
@@ -391,9 +387,9 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     payload.length = len % BLOCK_SIZE;
                     if (payload.length != 0) {
                         payload.length = htonl(payload.length);
-                        if (!write_full(sock, b(packet_length))) goto end;
-                        if (!write_full(sock, &type, 1)) goto end;
-                        if (!write_full(sock, b(payload))) goto end;
+                        if (!write_full(sock, packet_length)) goto end;
+                        if (!write_full_length(sock, &type, 1)) goto end;
+                        if (!write_full(sock, payload)) goto end;
                         sent_requests ++;
                         fprintf(stderr, "Sent smaller REQUEST for piece %d, begin %d, length %d\n",
                                 ntohl(payload.index), ntohl(payload.begin), ntohl(payload.length));
@@ -406,15 +402,15 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     fprintf(stderr, "got BITFIELD\n");
                     while (packet_length > 0) {
                         uint8_t payload;
-                        if (!read_full(sock, b(payload))) goto end;
+                        if (!read_full(sock, payload)) goto end;
                         /* fprintf(stderr, "bitfield payload %08b\n", payload); */
                         // FIXME check if 1 << (8 - piece) is set in the right byte
                         packet_length -= 1;
                     }
                     packet_length = htonl(1);
-                    if (!write_full(sock, b(packet_length))) goto end;
+                    if (!write_full(sock, packet_length)) goto end;
                     type = INTERESTED;
-                    if (!write_full(sock, &type, 1)) goto end;
+                    if (!write_full_length(sock, &type, 1)) goto end;
                     fprintf(stderr, "Sent INTERESTED\n");
 
                     packet_length = 0;
@@ -433,9 +429,9 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     }
 
                     uint32_t index, begin;
-                    if (!read_full(sock, b(index))) goto end;
+                    if (!read_full(sock, index)) goto end;
                     index = ntohl(index);
-                    if (!read_full(sock, b(begin))) goto end;
+                    if (!read_full(sock, begin)) goto end;
                     begin = ntohl(begin);
                     packet_length -= sizeof(uint32_t) * 2;
 
@@ -446,7 +442,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
                     }
 
                     // FIXME validate begin are in range
-                    if (!read_full(sock, data + begin, packet_length)) goto end;
+                    if (!read_full_length(sock, data + begin, packet_length)) goto end;
                     fprintf(stderr, "Got request for piece %d, begin %d, length %d\n",
                             index, begin, packet_length);
 
@@ -491,7 +487,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
 
 
     ret = EX_IOERR;
-    if (!write_full(out_fd, data, len)) {
+    if (!write_full_length(out_fd, data, len)) {
         fprintf(stderr, "Could not write output file\n");
         goto end;
     }
