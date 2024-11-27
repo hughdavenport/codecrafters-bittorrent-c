@@ -38,6 +38,10 @@
 #define TODO(msg) ERR_OUT("%s\n", (msg))
 #endif
 
+// job.c
+void info_torrent_file(const char *data);
+void info_peers(const char *data);
+
 int hash_file(const char *fname); // common.c
 int download_piece_from_file(char *fname, char *output, long piece); // pieces.c
 int download_from_file(char *fname, char *output); // pieces.c
@@ -261,13 +265,15 @@ int decode(int argc, char **argv) {
 int info(int argc, char **argv) {
     if (argc == 0) return EX_USAGE;
     const char *torrent_file = argv[0];
-    return info_file(torrent_file);
+    info_torrent_file(torrent_file);
+    return EX_OK;
 }
 
 int peers(int argc, char **argv) {
     if (argc == 0) return EX_USAGE;
     const char *torrent_file = argv[0];
-    return peers_from_file(torrent_file);
+    info_peers(torrent_file);
+    return EX_OK;
 }
 
 int hash(int argc, char **argv) {

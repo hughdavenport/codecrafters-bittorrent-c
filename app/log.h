@@ -68,10 +68,12 @@ extern Logger __logger_stderr;
     ELOG("UNIMPLEMENTED: " fmt "\n", ##__VA_ARGS__); \
     abort(); \
 } while (0);
+#ifndef UNREACHABLE
 #define UNREACHABLE(fmt, ...) do { \
     ELOG("UNREACHABLE: " fmt "\n", ##__VA_ARGS__); \
     abort(); \
 } while (0);
+#endif
 
 #endif /* LOG_H */
 
