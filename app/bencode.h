@@ -25,9 +25,9 @@ SOFTWARE.
 #ifndef BENCODE_H
 #define BENCODE_H
 
-#define BENCODE_H_VERSION_MAJOR 3
+#define BENCODE_H_VERSION_MAJOR 4
 #define BENCODE_H_VERSION_MINOR 0
-#define BENCODE_H_VERSION_PATCH 1
+#define BENCODE_H_VERSION_PATCH 0
 
 #include <stddef.h>
 #include <stdint.h>
@@ -67,11 +67,17 @@ typedef struct {
     bool noquotes;
 } BencodedPrintConfig;
 
+#define BENCODED_BYTES(s) (BencodedValue) { .type = BYTES, .size = strlen((s)), .data = (s), }
+#define BENCODED_INTEGER(i) (BencodedValue) { .type = INTEGER, .size = (i), }
+
 void free_bencoded_value(BencodedValue *value);
 
 // end is pointer to end of bytes (if NULL then set to `bencoded_value + strlen(bencoded_value)`)
 BencodedValue *decode_bencoded_bytes(const uint8_t *bencoded_value, const uint8_t *end);
 BencodedValue *decode_bencoded_file(const char* fname, bool keep_memory);
+
+size_t encode_bencoded_value_length(BencodedValue *value);
+int encode_bencoded_value(uint8_t *dst, BencodedValue *value, size_t n);
 
 int print_bencoded_value(BencodedValue *value, BencodedPrintConfig config);
 
@@ -85,6 +91,10 @@ BencodedValue *bencoded_dict_value(BencodedDict *d, const char* key);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef UNREACHABLE
+#define UNREACHABLE(fmt, ...) fprintf(stderr, "%s:%d: %s: UNREACHABLE: " fmt "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#endif
 
 void free_bencoded_list(BencodedList *list);
 void free_bencoded_dict(BencodedDict *dict);
@@ -395,6 +405,120 @@ int print_bencoded_value(BencodedValue *value, BencodedPrintConfig config) {
 
     fprintf(stderr, "%s:%d: UNREACHABLE\n", __FILE__, __LINE__);
     return EX_SOFTWARE;
+}
+
+size_t encode_bencoded_value_length(BencodedValue *value) {
+    if (value == NULL) return 0;
+    switch (value->type) {
+        case UNKNOWN: return 0;
+        case BYTES: {
+            size_t ret = 1 + value->size;
+            size_t len = value->size;
+            while (len > 0) {
+                ret ++;
+                len /= 10;
+            }
+            return ret;
+        }
+
+        case INTEGER: {
+            size_t ret = 2;
+            size_t len = value->size;
+            while (len > 0) {
+                ret ++;
+                len /= 10;
+            }
+            return ret;
+        }
+
+        case LIST: {
+            if (value->data == NULL) return 2;
+            return 2 + encode_bencoded_value_length(((BencodedList *)value->data)->value);
+        }
+
+        case DICT: {
+            if (value->data == NULL) return 2;
+            BencodedDict *dict = value->data;
+            return 2 + encode_bencoded_value_length(dict->key) + encode_bencoded_value_length(dict->value);
+        }
+    }
+    return 0;
+}
+
+int encode_bencoded_value(uint8_t *dst, BencodedValue *value, size_t n) {
+    if (value == NULL) return -1;
+    switch (value->type) {
+        case UNKNOWN: return -1;
+        case BYTES: {
+            int ret = snprintf((char *)dst, n, "%zu:", value->size);
+            if (ret <= 0) return -1;
+            if (dst[ret-1] != ':') return -1;
+            if (ret + value->size > n) return -1;
+            memcpy(dst + ret, value->data, value->size);
+            return ret + value->size;
+        }
+        case INTEGER: {
+            int ret = snprintf((char *)dst, n, "i%zue", value->size);
+            if (ret <= 0) return -1;
+            if (dst[ret - 1] != 'e') return -1;
+            return ret;
+        }
+        case LIST: {
+            if (n < 2) return -1;
+            uint8_t *p = dst;
+            *p = 'l';
+            p += 1;
+            n -= 1;
+            BencodedList *l = (BencodedList *)value->data;
+            while (l) {
+                int ret = encode_bencoded_value(p, l->value, n);
+                if (ret <= 0) return -1;
+                if (ret > (int)n) return -1;
+                p += ret;
+                n -= ret;
+                l = l->next;
+            }
+            if (n < 1) return -1;
+            *p = 'e';
+            return p - dst + 1;
+        }
+        case DICT: {
+            if (n < 2) return -1;
+            uint8_t *p = dst;
+            *p = 'd';
+            p += 1;
+            n -= 1;
+            BencodedDict *d = (BencodedDict *)value->data;
+            while (d) {
+                if (!d->key || d->key->type != BYTES) {
+                    UNREACHABLE("Bencoded dictionary keys must be bytes");
+                }
+                if (d->next && (!d->next->key || d->next->key->type != BYTES)) {
+                    UNREACHABLE("Bencoded dictionary keys must be bytes");
+                }
+                if (d->next && strcmp(d->key->data, d->next->key->data) > 0) {
+                    UNREACHABLE("Bencoded dictionaries should be in lexographical order");
+                    return -1;
+                }
+                int ret = encode_bencoded_value(p, d->key, n);
+                if (ret <= 0) return -1;
+                if (ret > (int)n) return -1;
+                p += ret;
+                n -= ret;
+                ret = encode_bencoded_value(p, d->value, n);
+                if (ret <= 0) return -1;
+                if (ret > (int)n) return -1;
+                p += ret;
+                n -= ret;
+                d = d->next;
+            }
+            if (n < 1) return -1;
+            *p = 'e';
+            return p - dst + 1;
+        }
+    }
+
+    return -1;
 }
 
 BencodedValue *bencoded_dict_value(BencodedDict *d, const char* key) {
