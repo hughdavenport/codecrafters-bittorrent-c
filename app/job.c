@@ -224,7 +224,7 @@ typedef struct {
 } PeerConnection;
 
 TorrentFile *parse_magnet_url(const char *data) {
-    ELOG("%s)\n", data);
+    ELOG("%s\n", data);
     char *magnet_url = strdup((char *)data);
     if (magnet_url == NULL) return NULL;
 
@@ -425,7 +425,11 @@ TorrentFile *parse_torrent_file_or_magnet(const char *data) {
 
 bool get_peers(TorrentFile *torrent) {
     ELOG("(%p)\n", (void *)torrent);
-    if (torrent->tracker == NULL) goto err;
+    bool ret = false;
+    if (torrent->tracker == NULL) {
+        UNIMPLEMENTED("DHT extension");
+        return false;
+    }
     if (pthread_rwlock_wrlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_wrlock() error");
         return false;
@@ -444,6 +448,7 @@ bool get_peers(TorrentFile *torrent) {
         goto unlock;
     }
     free(tr);
+    ELOG("(%s)\n", tracker_response->start);
     BencodedValue *peers = bencoded_dict_value((BencodedDict *)tracker_response->data, "peers");
     if (!peers || peers->type != BYTES) goto unlock;
     if (peers->size % 6 != 0) goto unlock;
@@ -463,21 +468,14 @@ bool get_peers(TorrentFile *torrent) {
         ELOG("Got peer %s:%s\n", torrent->peers[idx].host, torrent->peers[idx].port);
     }
 
+    ret = true;
 unlock:
-    if (pthread_rwlock_unlock(&torrent->lock) != 0) {
-        perror("pthread_rwlock_unlock() error");
-        return false;
-    }
-
-    return torrent;
-
-err:
     if (torrent && pthread_rwlock_unlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_unlock() error");
         return false;
     }
 
-    return NULL;
+    return ret;
 }
 
 bool get_handshake(PeerConnection *peer) {
@@ -532,7 +530,6 @@ void info_torrent_file(const char *data) {
     if (data == NULL) return;
     TorrentFile *torrent = parse_torrent_file_or_magnet(data);
     if (torrent == NULL) return;
-    if (torrent->peers == NULL && !get_peers(torrent)) return;
     if (pthread_rwlock_rdlock(&torrent->lock) != 0) {
         perror("pthread_rwlock_rdlock() error");
         return;
@@ -543,7 +540,6 @@ void info_torrent_file(const char *data) {
         goto unlock_torrent;
     }
 
-    ELOG("tr=%s\n", torrent->tracker);
     printf("Tracker URL: %s\n", torrent->tracker);
     if (torrent->length > 0) printf("Length: %zu\n", torrent->length);
     printf("Info Hash: ");
@@ -674,19 +670,6 @@ unlock_torrent:
     }
 
 #include <arpa/inet.h>
-/* https://www.bittorrent.org/beps/bep_0003.html version 0e08ddf84d8d3bf101cdf897fc312f2774588c9e */
-typedef enum {
-    CHOKE,
-    UNCHOKE,
-    INTERESTED,
-    NOT_INTERESTED,
-    HAVE,
-    BITFIELD,
-    REQUEST,
-    PIECE,
-    CANCEL,
-    NUM_TYPES
-} PeerMessageType;
 
 typedef struct {
     uint32_t index;
@@ -722,7 +705,7 @@ void *handle_connection(void *data) {
     PEER_LOG("Handling connection");
     uint8_t bitfield = 0;
     while (!complete || !init) {
-        if (!init) PEER_LOG("Outstanding requests: %zu", requests);
+        if (init) PEER_LOG("Outstanding requests: %zu", requests);
         uint32_t packet_length = 0;
         if (!read_full(peer->fd, packet_length)) {
             PEER_LOG("Connection lost");
@@ -737,6 +720,45 @@ void *handle_connection(void *data) {
             packet_length -= 1;
             static_assert(NUM_TYPES == 9, "BEP 003 Peer Message Types");
             switch (type) {
+                case EXTENDED:
+                    /* BEP 010 Extension Protocol */
+                    (void) type;
+                    uint8_t id;
+                    if (!read_full(peer->fd, id)) break;
+                    packet_length -= 1;
+                    static_assert(NUM_EXTENSIONS == 2, "BEP 010 Handshake, BEP 009 Metadata, nil others");
+                    if (id == 0) {
+                        PEER_LOG("received EXTENDED handshake");
+                        /* Handshake */
+                        uint8_t *message = (uint8_t *)malloc(packet_length);
+                        if (message == NULL) break;
+                        if (!read_full_length(peer->fd, message, packet_length)) {
+                            free(message);
+                            break;
+                        }
+                        BencodedValue *decoded = decode_bencoded_bytes(message, message + packet_length);
+                        if (!decoded) {
+                            free(message);
+                            break;
+                        }
+                        if (decoded->type != DICT) {
+                            free(message);
+                            break;
+                        }
+                        BencodedDict *dict = (BencodedDict *)decoded->data;
+                        BencodedValue *m = bencoded_dict_value(dict, "m");
+
+                        /* FIXME store in peer connection? */
+                        free(message);
+                    } else {
+                        PEER_LOG("received EXTENDED id %d", id);
+
+                        UNIMPLEMENTED("Lookup EXTENDED dict");
+                    }
+
+                    /* UNIMPLEMENTED("EXTENDED"); */
+                    break;
+
                 case CHOKE:
                     PEER_LOG("received CHOKE");
                     peer->unchoked = false;

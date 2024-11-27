@@ -75,6 +75,38 @@ SOFTWARE.
 // Enough space for xxx.xxx.xxx.xxx:xxxxx\0
 #define PEER_STRING_SIZE 23
 
+#define NUM_BITTORRENT_EXTENSIONS 8
+#define SET_BITTORRENT_EXTENSION(extensions, extension) do { \
+    static_assert((extension) < NUM_BITTORRENT_EXTENSIONS * 8); \
+    (extensions)[(extension) / NUM_BITTORRENT_EXTENSIONS] |= \
+        (1 << ((extension) % NUM_BITTORRENT_EXTENSIONS)); \
+} while (0);
+
+#define TEST_BITTORRENT_EXTENSION(extensions, extension) \
+    (((extensions)[(extension) / NUM_BITTORRENT_EXTENSIONS] & (1 << ((extension) % NUM_BITTORRENT_EXTENSIONS))) != 0)
+
+#define BITTORRENT_EXTENSION_PROTOCOL 44
+
+/* https://www.bittorrent.org/beps/bep_0003.html version 0e08ddf84d8d3bf101cdf897fc312f2774588c9e */
+typedef enum {
+    CHOKE,
+    UNCHOKE,
+    INTERESTED,
+    NOT_INTERESTED,
+    HAVE,
+    BITFIELD,
+    REQUEST,
+    PIECE,
+    CANCEL,
+    NUM_TYPES,
+    EXTENDED = 20,
+} PeerMessageType;
+typedef enum {
+    HANDSHAKE,
+    METADATA,
+    NUM_EXTENSIONS,
+} ExtendedMessageType;
+
 // prints peers out after making a request to the tracker
 int peers_from_file(const char *torrent_file);
 
@@ -228,15 +260,6 @@ int connect_peer(const char *host, const char *port) {
 
 #include "io.h"
 
-#define NUM_BITTORRENT_EXTENSIONS 8
-#define SET_BITTORRENT_EXTENSION(extensions, extension) do { \
-    static_assert((extension) < NUM_BITTORRENT_EXTENSIONS * 8); \
-    (extensions)[(extension) / NUM_BITTORRENT_EXTENSIONS] |= \
-        (1 << ((extension) % NUM_BITTORRENT_EXTENSIONS)); \
-} while (0);
-
-#define BITTORRENT_EXTENSION_PROTOCOL 44
-
 int handshake_peer(const char *host,
         const char *port,
         const uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
@@ -284,6 +307,41 @@ int handshake_peer(const char *host,
     if (memcmp(reserved + EXTENSIONS_SIZE, info_hash, SHA1_DIGEST_BYTE_LENGTH) != 0) {
         ERROR("Recieved invalid hash");
         goto error;
+    }
+
+    if (TEST_BITTORRENT_EXTENSION(reserved, BITTORRENT_EXTENSION_PROTOCOL)) {
+        ELOG("Handshaking extensions\n");
+        static_assert(NUM_EXTENSIONS == 2, "BEP 010 Handshake, BEP 009 Metadata, nil others");
+        BencodedValue data = {
+            .type = DICT,
+            .data = &(BencodedDict) {
+                .next = NULL,
+                .key = &BENCODED_BYTES("m"),
+                .value = &(BencodedValue) {
+                    .type = DICT,
+                    .data = &(BencodedDict) {
+                        .key = &BENCODED_BYTES("ut_metadata"),
+                        .value = &BENCODED_INTEGER(METADATA),
+                        .next = NULL,
+                    }
+                },
+            },
+        };
+        PeerMessageType type = EXTENDED;
+        ExtendedMessageType id = HANDSHAKE;
+        size_t data_length = encode_bencoded_value_length(&data);
+        uint32_t packet_length = 2 + data_length;
+        uint8_t *packet = malloc(packet_length + sizeof(packet_length));
+        packet_length = htonl(packet_length);
+        memcpy(packet, &packet_length, sizeof(packet_length));
+        packet[sizeof(packet_length)] = (uint8_t)type;
+        packet[sizeof(packet_length) + 1] = (uint8_t)id;
+        encode_bencoded_value(packet + sizeof(packet_length) + 2, &data, data_length);
+        if (!write_full_length(sock, packet, sizeof(packet_length) + 2 + data_length)) {
+            ELOG("Extended handshake failed");
+            goto error;
+        }
+        sleep(1);
     }
 
     return sock;

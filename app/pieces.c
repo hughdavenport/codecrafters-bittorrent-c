@@ -19,18 +19,6 @@
 // 2^14 (16 kiB)
 #define BLOCK_SIZE 16384
 
-typedef enum {
-    CHOKE,
-    UNCHOKE,
-    INTERESTED,
-    NOT_INTERESTED,
-    HAVE,
-    BITFIELD,
-    REQUEST,
-    PIECE,
-    CANCEL
-} PeerMessageType;
-
 typedef struct {
     uint32_t index;
     uint32_t begin;
