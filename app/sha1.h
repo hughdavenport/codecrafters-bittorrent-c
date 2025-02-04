@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2024 Hugh Davenport
+Copyright (c) 2025 Hugh Davenport
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@ SOFTWARE.
 #ifndef SHA1_H
 #define SHA1_H
 
-#define SHA1_H_VERSION_MAJOR 1
+#define SHA1_H_VERSION_MAJOR 2
 #define SHA1_H_VERSION_MINOR 0
 #define SHA1_H_VERSION_PATCH 0
 
@@ -132,7 +132,7 @@ void _sha1_pad_block(uint8_t M[_SHA1_BLOCK_SIZE], uint32_t H[5], uint64_t length
     int idx = length % _SHA1_BLOCK_SIZE;
     length *= 8;
     M[idx++] = 0x80;
-    if (idx >= (_SHA1_BLOCK_SIZE) - 8) {
+    if (idx > (_SHA1_BLOCK_SIZE) - 8) {
         while (idx < _SHA1_BLOCK_SIZE) {
             M[idx++] = 0;
         }
