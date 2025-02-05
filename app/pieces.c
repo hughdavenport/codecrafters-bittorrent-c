@@ -232,9 +232,7 @@ int download_from_file(char *fname, char *output) {
             }
             fprintf(stderr, "\n");
             fprintf(stderr, "Actual:   ");
-            for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-                fprintf(stderr, "%02x", piece_hash[idx]);
-            }
+            SHA1_FPRINTF_HEX(stderr, piece_hash);
             fprintf(stderr, "\n");
             goto end;
         }
@@ -466,9 +464,7 @@ int download_piece_from_file(char *fname, char *output, long piece) {
         }
         fprintf(stderr, "\n");
         fprintf(stderr, "Actual:   ");
-        for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-            fprintf(stderr, "%02x", piece_hash[idx]);
-        }
+        SHA1_FPRINTF_HEX(stderr, piece_hash);
         fprintf(stderr, "\n");
         goto end;
     }

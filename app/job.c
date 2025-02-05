@@ -543,9 +543,7 @@ void info_torrent_file(const char *data) {
     printf("Tracker URL: %s\n", torrent->tracker);
     if (torrent->length > 0) printf("Length: %zu\n", torrent->length);
     printf("Info Hash: ");
-    for (size_t idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        printf("%02x", torrent->info_hash[idx]);
-    }
+    SHA1_PRINTF_HEX(torrent->info_hash);
     printf("\n");
     if (torrent->piece_length > 0) printf("Piece Length: %zu\n", torrent->piece_length);
     if (torrent->num_pieces > 0) {
@@ -1015,9 +1013,7 @@ void download_torrent_from_input(const char *data) {
             }
             fprintf(stderr, "\n");
             fprintf(stderr, "Actual:   ");
-            for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-                fprintf(stderr, "%02x", piece_hash[idx]);
-            }
+            SHA1_FPRINTF_HEX(stderr, piece_hash);
             fprintf(stderr, "\n");
             goto end;
         }

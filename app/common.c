@@ -66,9 +66,7 @@ int hash_file(const char *fname) {
 
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     sha1_digest((uint8_t *)data, fsize, info_hash);
-    for (int idx = 0; idx < SHA1_DIGEST_BYTE_LENGTH; idx ++) {
-        printf("%02x", info_hash[idx]);
-    }
+    SHA1_PRINTF_HEX(info_hash);
     printf("\n");
 
     ret = EX_OK;
