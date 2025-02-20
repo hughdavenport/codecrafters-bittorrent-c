@@ -527,6 +527,80 @@ int magnet_handshake(int argc, char **argv) {
         printf("%02x", peer_id[idx]);
     }
     printf("\n");
+    if (TEST_BITTORRENT_EXTENSION(response + response[0] + 1, BITTORRENT_EXTENSION_PROTOCOL)) {
+        bool found = false;
+        // FIXME this swallows up packets
+        while (!found) {
+            uint32_t packet_length;
+            if (!read_full(sock, packet_length)) goto end;
+            packet_length = ntohl(packet_length);
+            fprintf(stderr, "packet length = %u\n", packet_length);
+            if (packet_length > 0) {
+                PeerMessageType type = CHOKE;
+                if (!read_full_length(sock, &type, 1)) goto end;
+                packet_length -= 1;
+                switch (type) {
+                    case EXTENDED: {
+                        fprintf(stderr, "got EXTENDED\n");
+                        ExtendedMessageType id = HANDSHAKE;
+                        if (!read_full_length(sock, &id, 1)) goto end;
+                        packet_length -= 1;
+                        _Static_assert(NUM_EXTENSIONS == 2, "Unknown number of extensions");
+                        switch (id) {
+                            case HANDSHAKE:
+                                fprintf(stderr, "is a HANDSHAKE\n");
+                                break;
+                            case METADATA:
+                                fprintf(stderr, "is a METADATA\n");
+                                break;
+                            default:
+                                fprintf(stderr, "is unknown extended type %d\n", id);
+                                break;
+                        }
+                        uint8_t *packet = malloc(packet_length);
+                        if (packet == NULL) goto end;
+                        if (!read_full_length(sock, packet, packet_length)) goto end;
+                        BencodedValue *decoded = decode_bencoded_bytes(packet, packet + packet_length);
+                        if (!decoded) goto end;
+                        if (decoded->type != DICT) goto end;
+                        BencodedDict *dict = (BencodedDict *)decoded->data;
+                        BencodedValue *m = bencoded_dict_value(dict, "m");
+                        if (!m) goto end;
+                        if (m->type != DICT) goto end;
+                        dict = (BencodedDict *)m->data;
+                        BencodedValue *ut_metadata = bencoded_dict_value(dict, "ut_metadata");
+                        if (!ut_metadata) goto end;
+                        if (ut_metadata->type != INTEGER) goto end;
+                        printf("Peer Metadata Extension ID: %ld\n", ut_metadata->size);
+                        found = true;
+                    }; break;
+
+                    default:
+                        fprintf(stderr, "got ");
+                        switch (type) {
+                            case CHOKE: fprintf(stderr, "CHOKE\n"); break;
+                            case UNCHOKE: fprintf(stderr, "UNCHOKE\n"); break;
+                            case INTERESTED: fprintf(stderr, "INTERESTED\n"); break;
+                            case NOT_INTERESTED: fprintf(stderr, "NOT_INTERESTED\n"); break;
+                            case HAVE: fprintf(stderr, "HAVE\n"); break;
+                            case BITFIELD: fprintf(stderr, "BITFIELD\n"); break;
+                            case REQUEST: fprintf(stderr, "REQUEST\n"); break;
+                            case PIECE: fprintf(stderr, "PIECE\n"); break;
+                            case CANCEL: fprintf(stderr, "CANCEL\n"); break;
+                            case EXTENDED: fprintf(stderr, "EXTENDED\n"); break;
+                            default:
+                                fprintf(stderr, "unknown message type %d\n", type);
+                        }
+
+                        while (packet_length > 0) {
+                            uint8_t payload;
+                            if (!read_full(sock, payload)) goto end;
+                            packet_length -= 1;
+                        }
+                }
+            }
+        }
+    }
 
     ret = EX_OK;
 end:

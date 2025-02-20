@@ -745,6 +745,8 @@ void *handle_connection(void *data) {
                         }
                         BencodedDict *dict = (BencodedDict *)decoded->data;
                         BencodedValue *m = bencoded_dict_value(dict, "m");
+                        (void)m;
+                        UNIMPLEMENTED();
 
                         /* FIXME store in peer connection? */
                         free(message);
@@ -925,7 +927,7 @@ void download_torrent_from_input(const char *data) {
     PeerConnection *peers = NULL;
     RequestPayload *requests = NULL;
     if (data == NULL) return;
-    
+
     TorrentFile *torrent = parse_torrent_file_or_magnet(data);
     if (torrent == NULL) return;
 
@@ -1052,13 +1054,13 @@ int job_test() {
     JobList jobs = {0};
     job_list_init(&jobs);
 
-    info_peers("sample.torrent");
-    info_handshake("sample.torrent", 0);
-    info_handshake("sample.torrent", 1);
-    info_handshake("sample.torrent", 2);
-    info_torrent_file("sample.torrent");
-    download_torrent_from_input("sample.torrent");
-    /* download_torrent_from_input("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"); */
+    /* info_peers("sample.torrent"); */
+    /* info_handshake("sample.torrent", 0); */
+    /* info_handshake("sample.torrent", 1); */
+    /* info_handshake("sample.torrent", 2); */
+    /* info_torrent_file("sample.torrent"); */
+    /* download_torrent_from_input("sample.torrent"); */
+    download_torrent_from_input("magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce");
 
     job_list_free(&jobs);
 

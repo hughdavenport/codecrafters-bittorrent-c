@@ -338,7 +338,7 @@ int handshake_peer(const char *host,
         packet[sizeof(packet_length) + 1] = (uint8_t)id;
         encode_bencoded_value(packet + sizeof(packet_length) + 2, &data, data_length);
         if (!write_full_length(sock, packet, sizeof(packet_length) + 2 + data_length)) {
-            ELOG("Extended handshake failed");
+            ELOG("Extended handshake sending failed");
             goto error;
         }
         sleep(1);
