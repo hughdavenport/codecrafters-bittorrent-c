@@ -22,6 +22,10 @@
 #include "log.h"
 #include "queue.h"
 
+#ifndef static_assert /* tcc has this problem */
+#define static_assert _Static_assert
+#endif
+
 pthread_mutex_t print_lock;
 struct JobList;
 typedef struct Job {
@@ -438,12 +442,12 @@ bool get_peers(TorrentFile *torrent) {
 
     URL tracker = {0};
     char *tr = strdup(torrent->tracker);
-    if (tr == NULL) UNREACHABLE();
+    if (tr == NULL) UNREACHABLE("");
     parse_url(tr, NULL, &tracker);
     BencodedValue *tracker_response = NULL;
     size_t length = torrent->length == 0 ? 1 : torrent->length; // Must be > 0 to get any peers. Exact number not known in advance
-    if (tracker_response_from_url(&tracker, 0, 0, length,
-                torrent->info_hash, &tracker_response) != EX_OK) {
+    if (_tracker_response_from_url(&tracker, 0, 0, length,
+                torrent->info_hash, &tracker_response, false) != EX_OK) {
         free(tr);
         goto unlock;
     }
@@ -577,7 +581,7 @@ void info_handshake_from_connection(PeerConnection *peer) {
     }
     char *host = torrent->peers[peer->idx].host;
     char *port = torrent->peers[peer->idx].port;
-#define PEER_LOG(fmt, ...) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd, ##__VA_ARGS__);
+#define PEER_LOG(fmt) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd);
     if (peer->fd == -1 || peer->fd == 0) {
         PEER_LOG("Connecting and handshaking");
         if (!get_handshake(peer)) {
@@ -606,6 +610,7 @@ close:
         close(peer->fd);
         peer->fd = -1;
     }
+#undef PEER_LOG
 }
 
 void info_handshake(const char *data, size_t peer) {
@@ -622,7 +627,7 @@ void info_handshake(const char *data, size_t peer) {
 }
 
 void info_peers(const char *data) {
-    ELOG("(%p)\n", data);
+    ELOG("(%p)\n", (void*)data);
     if (data == NULL) return;
     TorrentFile *torrent = parse_torrent_file_or_magnet(data);
     if (torrent == NULL) return;
@@ -687,7 +692,11 @@ void *handle_connection(void *data) {
     }
     char *host = torrent->peers[peer->idx].host;
     char *port = torrent->peers[peer->idx].port;
+#if defined(__TINYC__) || defined(__GNU__)
 #define PEER_LOG(fmt, ...) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd, ##__VA_ARGS__);
+#else
+#define PEER_LOG(fmt, ...) ELOG("%s:%s (fd=%d): " fmt "\n", host, port, peer->fd __VA_OPT__(,) __VA_ARGS__);
+#endif
     if (peer->fd == -1 || peer->fd == 0) {
         PEER_LOG("Connecting and handshaking");
         if (!get_handshake(peer)) {
@@ -746,7 +755,7 @@ void *handle_connection(void *data) {
                         BencodedDict *dict = (BencodedDict *)decoded->data;
                         BencodedValue *m = bencoded_dict_value(dict, "m");
                         (void)m;
-                        UNIMPLEMENTED();
+                        UNIMPLEMENTED("");
 
                         /* FIXME store in peer connection? */
                         free(message);
@@ -918,10 +927,11 @@ void *handle_connection(void *data) {
 end:
 
     return NULL;
+#undef PEER_LOG
 }
 
 void download_torrent_from_input(const char *data) {
-    ELOG("(%p)\n", data);
+    ELOG("(%p)\n", (void*)data);
     FILE *out = NULL;
     pthread_t *threads = NULL;
     PeerConnection *peers = NULL;
@@ -1048,7 +1058,7 @@ end:
     if (out) fclose(out);
 }
 
-int job_test() {
+int job_test(void) {
     pthread_mutex_init(&print_lock, NULL);
 
     JobList jobs = {0};

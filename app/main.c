@@ -49,6 +49,8 @@ int download_from_file(char *fname, char *output); // pieces.c
 int handshake_file(const char *fname, const char *peer) {
     int ret = EX_DATAERR;
     BencodedValue *decoded = decode_bencoded_file(fname, true);
+    char *peer_str = NULL;
+    int sock = -1;
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
@@ -66,7 +68,6 @@ int handshake_file(const char *fname, const char *peer) {
         goto end;
     }
 
-    char *peer_str = NULL;
     if (peer == NULL) {
         // pick a random one, useful for testing
         char temp[PEER_STRING_SIZE];
@@ -78,6 +79,8 @@ int handshake_file(const char *fname, const char *peer) {
     } else {
         peer_str = strdup(peer);
     }
+    ret = EX_SOFTWARE;
+    if (peer_str == NULL) goto end;
     fprintf(stderr, "Using peer %s\n", peer_str);
     // FIXME else should we validate supplied peer is on tracker?
 
@@ -87,7 +90,7 @@ int handshake_file(const char *fname, const char *peer) {
     *colon = 0;
     ret = EX_UNAVAILABLE;
     uint8_t response[HANDSHAKE_SIZE];
-    int sock = handshake_peer(peer_str, colon + 1, info_hash, response);
+    sock = handshake_peer(peer_str, colon + 1, info_hash, response);
     *colon = ':';
     if (sock == -1) goto end;
     if (sock < 0) {
@@ -609,11 +612,15 @@ end:
 
 }
 
-int job_test();
+int job_test(void);
 int main(int argc, char* argv[]) {
 	// Disable output buffering
 	setbuf(stdout, NULL);
  	setbuf(stderr, NULL);
+
+#ifdef __TINYC__
+    logger_stdio_init();
+#endif
 
     if (argc < 3) {
     return job_test();

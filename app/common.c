@@ -46,15 +46,20 @@ void hexdump(uint8_t *buf, size_t len) {
 }
 
 int hash_file(const char *fname) {
+    int ret = EX_NOINPUT;
+    char *data = NULL;
     FILE *f = fopen(fname, "rb");
-    if (f == NULL) return EX_NOINPUT;
+    if (f == NULL) goto end;
 
+    ret = EX_IOERR;
     if (fseek(f, 0, SEEK_END) != 0) goto end;
     long fsize = ftell(f);
     if (fsize < 0) goto end;
     if (fseek(f, 0, SEEK_SET) != 0) goto end;
 
-    char *data = (char *)malloc(fsize);
+    ret = EX_SOFTWARE;
+    data = (char *)malloc(fsize);
+    if (data == NULL) goto end;
     size_t read_total = 0;
     while (read_total < (unsigned)fsize) {
         size_t read_count = fread(data, 1, fsize, f);
@@ -62,7 +67,7 @@ int hash_file(const char *fname) {
         read_total += read_count;
     }
 
-    int ret = EX_DATAERR;
+    ret = EX_DATAERR;
 
     uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH];
     sha1_digest((uint8_t *)data, fsize, info_hash);

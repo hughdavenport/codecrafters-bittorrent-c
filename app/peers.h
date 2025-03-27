@@ -65,8 +65,13 @@ SOFTWARE.
 #error "Depends on bencode.h version " DEPENDS_BENCODE_H_VERSION " or above. You can download this from https://github.com/hughdavenport/bencode.h"
 #endif // !defined(BENCODE_H)
 
+#include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#ifndef static_assert /* tcc has this problem */
+#define static_assert _Static_assert
+#endif
 
 #define HANDSHAKE_SIZE 68
 #define EXTENSIONS_SIZE 8
@@ -77,7 +82,7 @@ SOFTWARE.
 
 #define NUM_BITTORRENT_EXTENSIONS 8
 #define SET_BITTORRENT_EXTENSION(extensions, extension) do { \
-    static_assert((extension) < NUM_BITTORRENT_EXTENSIONS * 8); \
+    static_assert((extension) < NUM_BITTORRENT_EXTENSIONS * 8, "Unexpected extension"); \
     (extensions)[(extension) / NUM_BITTORRENT_EXTENSIONS] |= \
         (1 << ((extension) % NUM_BITTORRENT_EXTENSIONS)); \
 } while (0);
@@ -133,6 +138,7 @@ int handshake_peer(const char *host, const char *port, const uint8_t info_hash[S
 
 int peers_from_file(const char *torrent_file) {
     int ret = EX_DATAERR;
+    BencodedValue *response = NULL;
     BencodedValue *decoded = decode_bencoded_file(torrent_file, true);
     if (!decoded) goto end;
     if (decoded->type != DICT) goto end;
@@ -151,7 +157,6 @@ int peers_from_file(const char *torrent_file) {
         goto end;
     }
 
-    BencodedValue *response = NULL;
     int tracker_ret = tracker_response_from_dict(dict, info_hash, &response);
     if (tracker_ret != EX_OK) {
         ret = tracker_ret;

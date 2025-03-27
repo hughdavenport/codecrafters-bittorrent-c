@@ -26,6 +26,9 @@ typedef struct {
 } RequestPayload;
 
 int download_from_file(char *fname, char *output) {
+    uint8_t *full_data = NULL;
+    int sock = -1;
+    BencodedValue *decoded = NULL;
     FILE *out = output ? fopen(output, "w") : stdout;
     if (out == NULL) return EX_CANTCREAT;
     int out_fd = fileno(out);
@@ -33,7 +36,7 @@ int download_from_file(char *fname, char *output) {
     if (out_fd < 0) goto end;
 
     ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname, true);
+    decoded = decode_bencoded_file(fname, true);
     if (!decoded || decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
 
@@ -61,7 +64,8 @@ int download_from_file(char *fname, char *output) {
         goto end;
     }
 
-    uint8_t *full_data = malloc(length->size);
+    full_data = malloc(length->size);
+    if (full_data == NULL) goto end;
 
     // FIXME why not try all peers
     char peer[PEER_STRING_SIZE];
@@ -77,7 +81,7 @@ int download_from_file(char *fname, char *output) {
     *colon = 0;
     ret = EX_UNAVAILABLE;
     uint8_t response[HANDSHAKE_SIZE];
-    int sock = handshake_peer(peer, colon + 1, info_hash, response);
+    sock = handshake_peer(peer, colon + 1, info_hash, response);
     *colon = ':';
     if (sock == -1) goto end;
     ret = EX_PROTOCOL;
@@ -183,8 +187,8 @@ int download_from_file(char *fname, char *output) {
 
                     if (piece >= num_pieces) goto end;
                     uint8_t *data = full_data + (piece * piece_length->size);
-                    fprintf(stderr, "full_data + length->size = %p\n",full_data + length->size);
-                    fprintf(stderr, "data + begin + packet_length = %p\n",data + begin + packet_length);
+                    fprintf(stderr, "full_data + length->size = %p\n", (void*)(full_data + length->size));
+                    fprintf(stderr, "data + begin + packet_length = %p\n", (void*)(data + begin + packet_length));
                     if (full_data + length->size < data + begin + packet_length) {
                         goto end;
                     }
@@ -260,13 +264,16 @@ end:
 
 int download_piece_from_file(char *fname, char *output, long piece) {
     FILE *out = output ? fopen(output, "w") : stdout;
+    int sock = -1;
+    BencodedValue *decoded = NULL;
+    uint8_t *data = NULL;
     if (out == NULL) return EX_CANTCREAT;
     int out_fd = fileno(out);
     int ret = EX_IOERR;
     if (out_fd < 0) goto end;
 
     ret = EX_DATAERR;
-    BencodedValue *decoded = decode_bencoded_file(fname, true);
+    decoded = decode_bencoded_file(fname, true);
     if (!decoded || decoded->type != DICT) goto end;
     BencodedDict *dict = (BencodedDict *)decoded->data;
 
@@ -317,13 +324,13 @@ int download_piece_from_file(char *fname, char *output, long piece) {
     *colon = 0;
     ret = EX_UNAVAILABLE;
     uint8_t response[HANDSHAKE_SIZE];
-    int sock = handshake_peer(peer, colon + 1, info_hash, response);
+    sock = handshake_peer(peer, colon + 1, info_hash, response);
     *colon = ':';
     if (sock == -1) goto end;
     ret = EX_PROTOCOL;
     if (sock < 0) goto end;
 
-    uint8_t *data = malloc(len);
+    data = malloc(len);
     if (data == NULL) {
         ret = EX_TEMPFAIL;
         goto end;

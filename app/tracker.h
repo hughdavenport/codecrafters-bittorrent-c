@@ -25,7 +25,7 @@ SOFTWARE.
 #ifndef TRACKER_H
 #define TRACKER_H
 
-#define TRACKER_H_VERSION_MAJOR 1
+#define TRACKER_H_VERSION_MAJOR 2
 #define TRACKER_H_VERSION_MINOR 0
 #define TRACKER_H_VERSION_PATCH 0
 
@@ -50,10 +50,12 @@ SOFTWARE.
 #include <sysexits.h>
 
 // Returns peers after making a request to the tracker
-int tracker_response_from_url(URL *url,
+#define tracker_response_from_url(url, uploaded, downloaded, length, info_hash, response) \
+    _tracker_response_from_url((url), (uploaded), (downloaded), (length), (info_hash), (response), true)
+int _tracker_response_from_url(URL *url,
         size_t uploaded, size_t downloaded, size_t length,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        BencodedValue **response);
+        BencodedValue **response, bool cleanup);
 int tracker_response_from_dict(BencodedDict *dict,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
         BencodedValue **response);
@@ -141,10 +143,10 @@ bool add_query_string(URL *url,
     return true;
 }
 
-int tracker_response_from_url(URL *url,
+int _tracker_response_from_url(URL *url,
         size_t uploaded, size_t downloaded, size_t length,
         uint8_t info_hash[SHA1_DIGEST_BYTE_LENGTH],
-        BencodedValue **response) {
+        BencodedValue **response, bool cleanup) {
 
     int ret = EX_UNAVAILABLE;
     if (!add_query_string(url, info_hash, uploaded, downloaded, length)) {
@@ -176,7 +178,7 @@ int tracker_response_from_url(URL *url,
     ret = EX_OK;
 end:
     free(url->query); // Allocated in add_query_string
-    free_http_response(&http_response);
+    if (cleanup) free_http_response(&http_response);
     return ret;
 }
 
